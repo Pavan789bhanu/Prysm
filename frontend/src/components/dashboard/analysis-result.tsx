@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, Copy, FileCode2, GitBranch } from "lucide-react";
+import { Check, Copy, FileCode2, GitBranch, Table2 } from "lucide-react";
 import type { Analysis } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,9 @@ export function AnalysisResult({ analysis }: { analysis: Analysis }) {
     () => Object.entries(analysis.agent_outputs || {}),
     [analysis.agent_outputs],
   );
+  const preview = analysis.dataset_preview;
+  const previewColumns = preview?.columns ?? [];
+  const previewRows = preview?.sample ?? [];
 
   return (
     <div className="space-y-6">
@@ -71,6 +74,63 @@ export function AnalysisResult({ analysis }: { analysis: Analysis }) {
           </CardContent>
         ) : null}
       </Card>
+
+      {preview ? (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Table2 className="h-4 w-4 text-primary" />
+              <CardTitle>Dataset preview</CardTitle>
+            </div>
+            <CardDescription>
+              {preview.rows} rows · {previewColumns.length} columns · first{" "}
+              {previewRows.length} sample rows
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="mb-3 flex flex-wrap gap-2">
+              {previewColumns.map((column) => (
+                <Badge key={column} variant="muted">
+                  {column}
+                </Badge>
+              ))}
+            </div>
+            {previewRows.length > 0 ? (
+              <div className="overflow-x-auto rounded-xl border border-white/12">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="bg-white/5 text-muted-foreground">
+                    <tr>
+                      {previewColumns.map((column) => (
+                        <th key={column} className="px-3 py-2 font-medium">
+                          {column}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewRows.map((row, index) => (
+                      <tr
+                        key={index}
+                        className="border-t border-white/10 text-foreground/90"
+                      >
+                        {previewColumns.map((column) => (
+                          <td key={column} className="px-3 py-2 font-mono text-xs">
+                            {row[column] == null ? "—" : String(row[column])}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No sample rows were returned for this dataset.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
 
       {analysis.plan ? (
         <Card>
