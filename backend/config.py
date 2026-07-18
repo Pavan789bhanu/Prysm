@@ -19,7 +19,7 @@ except ImportError:  # python-dotenv not installed — env vars still work.
 DATA_DIR = Path(os.getenv("PRYSM_DATA_DIR", str(BASE_DIR / "data")))
 UPLOAD_DIR = DATA_DIR / "uploads"
 RESULTS_DIR = DATA_DIR / "results"
-DB_PATH = Path(os.getenv("DATABASE_PATH", str(DATA_DIR / "autoanalyst.db")))
+DB_PATH = Path(os.getenv("DATABASE_PATH", str(DATA_DIR / "prysm.db")))
 
 # A 32+ byte key keeps HMAC-SHA256 happy. Override in .env for production.
 SECRET_KEY = os.getenv(
@@ -34,7 +34,7 @@ ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "").strip().lower()
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 
 USE_S3 = os.getenv("USE_S3", "false").lower() == "true"
-S3_BUCKET = os.getenv("S3_BUCKET", "auto-data-analyst")
+S3_BUCKET = os.getenv("S3_BUCKET", "prysm-data")
 AWS_REGION = os.getenv("AWS_REGION", "ap-southeast-2")
 
 CORS_ORIGINS = [

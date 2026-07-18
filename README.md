@@ -58,7 +58,7 @@ Dashboard runs at `http://localhost:3000`
 | `SECRET_KEY` | Yes | JWT signing secret |
 | `OPENAI_API_KEY` | Yes* | OpenAI API key for analysis |
 | `USE_S3` | No | Set `true` to use AWS S3 storage |
-| `S3_BUCKET` | No | S3 bucket name (default: `auto-data-analyst`) |
+| `S3_BUCKET` | No | S3 bucket name (default: `prysm-data`) |
 | `CORS_ORIGINS` | No | Comma-separated allowed origins |
 
 \* Required only when running analyses
@@ -106,7 +106,7 @@ npm start
 
 ```bash
 export USE_S3=true
-export S3_BUCKET=auto-data-analyst
+export S3_BUCKET=prysm-data
 export AWS_REGION=ap-southeast-2
 ```
 
