@@ -160,6 +160,8 @@ def list_datasets():
 @jwt_required()
 def upload_dataset():
     import pandas as pd
+    import uuid
+    from datetime import datetime, timezone
 
     user_id = int(get_jwt_identity())
     if "file" not in request.files:
@@ -174,7 +176,11 @@ def upload_dataset():
         return jsonify({"message": "Only CSV files are supported."}), 400
 
     username = models.get_user_by_id(user_id)["username"]
-    file_key = f"{username}/{filename}"
+    # Unique key so re-uploading the same filename never overwrites prior data.
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    unique = uuid.uuid4().hex[:8]
+    stem = filename[:-4] if filename.lower().endswith(".csv") else filename
+    file_key = f"{username}/{stem}_{stamp}_{unique}.csv"
     storage.save_upload(file, file_key)
 
     local_path = storage.get_local_path(file_key)
