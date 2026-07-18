@@ -242,7 +242,7 @@ def create_analysis(user_id: int, dataset_id: int, query: str) -> dict[str, Any]
         cursor = conn.execute(
             """
             INSERT INTO analyses (user_id, dataset_id, query, status, created_at)
-            VALUES (?, ?, ?, 'processing', ?)
+            VALUES (?, ?, ?, 'pending', ?)
             """,
             (user_id, dataset_id, query, created_at),
         )
