@@ -220,6 +220,7 @@ def _run_analysis_for(user_id: int, dataset: dict, query: str):
     from analyst_service import run_analysis
 
     analysis = models.create_analysis(user_id, dataset["id"], query)
+    analysis = models.update_analysis(analysis["id"], status="processing")
     try:
         local_path = storage.get_local_path(dataset["file_key"])
         result = run_analysis(local_path, query)
