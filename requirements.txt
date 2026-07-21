@@ -1,11 +1,5 @@
-Flask
-boto3
-pandas
-numpy
-openai
-dspy-ai
-flask-jwt-extended
-flask-cors
-gunicorn
-httpx
-werkzeug
+# Prefer installing from backend/ for the API:
+#   pip install -r backend/requirements.txt
+#
+# This root file delegates so `pip install -r requirements.txt` stays in sync.
+-r backend/requirements.txt
