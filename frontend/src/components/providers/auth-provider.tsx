@@ -27,7 +27,7 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-const TOKEN_KEY = "autoanalyst_token";
+const TOKEN_KEY = "prysm_token";
 
 function readStoredToken() {
   if (typeof window === "undefined") return null;

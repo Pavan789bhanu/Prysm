@@ -85,7 +85,7 @@ def public_user(user: dict) -> dict:
 
 @app.route("/api/health", methods=["GET"])
 def health():
-    return jsonify({"status": "ok", "service": "autoanalyst-api"})
+    return jsonify({"status": "ok", "service": "prysm-api"})
 
 
 @app.route("/api/auth/register", methods=["POST"])
