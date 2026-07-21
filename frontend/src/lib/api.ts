@@ -26,6 +26,12 @@ export type Dataset = {
   created_at: string;
 };
 
+export type DatasetPreview = {
+  rows: number;
+  columns: string[];
+  sample: Record<string, unknown>[];
+};
+
 export type Analysis = {
   id: number;
   user_id: number;
@@ -41,6 +47,7 @@ export type Analysis = {
   file_key?: string;
   row_count?: number;
   column_count?: number;
+  dataset_preview?: DatasetPreview | null;
   created_at: string;
   completed_at?: string | null;
 };
