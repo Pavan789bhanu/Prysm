@@ -132,6 +132,27 @@ def test_upload_csv_success(client, auth):
     assert ds["columns"] == ["a", "b"]
 
 
+def test_upload_same_filename_keeps_unique_keys(client, auth):
+    _, headers = auth
+    first = client.post(
+        "/api/datasets/upload",
+        data={"file": _csv()},
+        content_type="multipart/form-data",
+        headers=headers,
+    ).get_json()["dataset"]
+    second = client.post(
+        "/api/datasets/upload",
+        data={"file": _csv()},
+        content_type="multipart/form-data",
+        headers=headers,
+    ).get_json()["dataset"]
+
+    assert first["filename"] == second["filename"]
+    assert first["file_key"] != second["file_key"]
+    listed = client.get("/api/datasets", headers=headers).get_json()["datasets"]
+    assert len(listed) == 2
+
+
 def test_upload_rejects_non_csv(client, auth):
     _, headers = auth
     resp = client.post(
