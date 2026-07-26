@@ -389,6 +389,7 @@ def test_analysis_includes_summary_and_report(client, auth):
     assert report.status_code == 200
     assert b"Prysm" in report.data
     assert b"Stakeholder Report" in report.data
+    assert b"Print / Save PDF" in report.data
 
 
 def test_demo_status_endpoint(client):
@@ -397,3 +398,25 @@ def test_demo_status_endpoint(client):
     body = resp.get_json()
     assert body["ready_for_stakeholders"] is True
     assert body["one_click_demo"] is True
+
+
+def test_sample_demo_flow_returns_charts_and_summary(client, auth):
+    _, headers = auth
+    sample = client.post("/api/datasets/sample", headers=headers)
+    assert sample.status_code == 200
+    body = sample.get_json()
+    assert "prysm_demo_sales" in body["dataset"]["filename"]
+    dataset_id = body["dataset"]["id"]
+    created = client.post(
+        "/api/analyses",
+        json={
+            "query": body["suggested_query"],
+            "dataset_id": dataset_id,
+        },
+        headers=headers,
+    )
+    assert created.status_code == 200
+    analysis = created.get_json()["analysis"]
+    assert analysis["summary"]["headline"]
+    assert analysis["summary"]["chart_count"] >= 1
+    assert len(analysis.get("charts") or []) >= 1

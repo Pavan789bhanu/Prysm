@@ -151,9 +151,9 @@ export default function HomePage() {
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </Link>
-            <Link href="/login">
+            <Link href="/pitch">
               <Button size="lg" variant="outline" className="min-w-[200px]">
-                Sign in to dashboard
+                Stakeholder pitch
               </Button>
             </Link>
           </div>

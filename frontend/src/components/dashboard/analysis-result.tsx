@@ -19,6 +19,7 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Toast } from "@/components/ui/toast";
 import { formatDate } from "@/lib/utils";
 
 function CodeBlock({ code, title }: { code: string; title: string }) {
@@ -46,11 +47,18 @@ function CodeBlock({ code, title }: { code: string; title: string }) {
   );
 }
 
-export function AnalysisResult({ analysis }: { analysis: Analysis }) {
+export function AnalysisResult({
+  analysis,
+  autoPresentHint = false,
+}: {
+  analysis: Analysis;
+  autoPresentHint?: boolean;
+}) {
   const { token } = useAuth();
   const [presenting, setPresenting] = useState(false);
   const [reportBusy, setReportBusy] = useState(false);
   const [reportError, setReportError] = useState("");
+  const [toast, setToast] = useState("");
 
   const agentEntries = useMemo(
     () => Object.entries(analysis.agent_outputs || {}),
@@ -84,6 +92,7 @@ export function AnalysisResult({ analysis }: { analysis: Analysis }) {
     setReportError("");
     try {
       await api.downloadReport(token, analysis.id);
+      setToast("Stakeholder report downloaded");
     } catch (err) {
       setReportError(err instanceof ApiError ? err.message : "Report download failed.");
     } finally {
@@ -93,6 +102,32 @@ export function AnalysisResult({ analysis }: { analysis: Analysis }) {
 
   return (
     <div className="space-y-6">
+      {toast ? <Toast message={toast} onClose={() => setToast("")} /> : null}
+      {autoPresentHint && analysis.status === "completed" ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-fuchsia-400/30 bg-gradient-to-r from-fuchsia-500/15 to-rose-500/10 px-4 py-3">
+          <div>
+            <p className="font-medium text-white">Ready for the room</p>
+            <p className="text-sm text-muted-foreground">
+              Open Present for a full-screen walkthrough, or export the HTML report.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={() => setPresenting(true)}>
+              <Maximize2 className="h-4 w-4" />
+              Present now
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={reportBusy}
+              onClick={() => void handleReport()}
+            >
+              <Download className="h-4 w-4" />
+              Export report
+            </Button>
+          </div>
+        </div>
+      ) : null}
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-center gap-2">

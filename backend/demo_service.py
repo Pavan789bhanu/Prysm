@@ -108,6 +108,22 @@ def build_demo_analysis(dataset_path: str, query: str) -> dict[str, Any]:
             ]
         )
 
+    if "month" in df.columns and y_col in numeric:
+        lines.extend(
+            [
+                "",
+                f'trend = df.groupby("month", as_index=False)["{y_col}"].sum()',
+                "fig_trend = px.line(",
+                "    trend,",
+                '    x="month",',
+                f'    y="{y_col}",',
+                f'    markers=True,',
+                f'    title="{y_col} over time",',
+                ")",
+                "fig_trend.show()",
+            ]
+        )
+
     code = "\n".join(lines)
     plan = "preprocessing_agent -> statistical_analytics_agent -> Data_Viz"
     plan_desc = (

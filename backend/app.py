@@ -446,6 +446,9 @@ def demo_status():
             "one_click_demo": True,
             "charts_enabled": True,
             "async_analyses": True,
+            "present_mode": True,
+            "report_export": True,
+            "executive_summaries": True,
             "ready_for_stakeholders": True,
         }
     )
