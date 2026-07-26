@@ -114,7 +114,7 @@ async function request<T>(
   }
 
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
+  if (response.status >= 400) {
     throw new ApiError(
       data.message || "Request failed",
       response.status,
@@ -177,10 +177,16 @@ export const api = {
   listAnalyses: (token: string) =>
     request<{ analyses: Analysis[] }>("/api/analyses", {}, token),
 
-  createAnalysis: (token: string, payload: { query: string; dataset_id: number }) =>
-    request<{ analysis: Analysis; message: string }>(
+  createAnalysis: (
+    token: string,
+    payload: { query: string; dataset_id: number; async?: boolean },
+  ) =>
+    request<{ analysis: Analysis; message: string; async?: boolean }>(
       "/api/analyses",
-      { method: "POST", body: JSON.stringify(payload) },
+      {
+        method: "POST",
+        body: JSON.stringify({ async: true, ...payload }),
+      },
       token,
     ),
 

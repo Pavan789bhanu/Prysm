@@ -47,6 +47,24 @@ export default function AnalyzePage() {
       .catch(() => undefined);
   }, [token]);
 
+  async function pollAnalysis(analysisId: number) {
+    if (!token) return;
+    const maxAttempts = 90;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const { analysis } = await api.getAnalysis(token, analysisId);
+      if (analysis.status === "completed" || analysis.status === "failed") {
+        setResult(analysis);
+        if (analysis.status === "failed") {
+          setError(analysis.error_message || "Analysis failed.");
+        }
+        await refreshProfile();
+        return;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 1500));
+    }
+    setError("Analysis is taking longer than expected. Check History in a moment.");
+  }
+
   async function handleAnalyze() {
     if (!token || !selectedDatasetId || !query.trim()) return;
     setLoading(true);
@@ -56,9 +74,14 @@ export default function AnalyzePage() {
       const response = await api.createAnalysis(token, {
         dataset_id: selectedDatasetId,
         query: query.trim(),
+        async: true,
       });
       setResult(response.analysis);
-      await refreshProfile();
+      if (response.analysis.status === "processing") {
+        await pollAnalysis(response.analysis.id);
+      } else {
+        await refreshProfile();
+      }
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
@@ -84,9 +107,14 @@ export default function AnalyzePage() {
       const response = await api.createAnalysis(token, {
         dataset_id: sample.dataset.id,
         query: sample.suggested_query,
+        async: true,
       });
       setResult(response.analysis);
-      await refreshProfile();
+      if (response.analysis.status === "processing") {
+        await pollAnalysis(response.analysis.id);
+      } else {
+        await refreshProfile();
+      }
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);

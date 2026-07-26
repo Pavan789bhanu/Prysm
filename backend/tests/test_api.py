@@ -234,6 +234,49 @@ def test_sample_dataset_and_delete(client, auth):
     assert all(item["id"] != dataset["id"] for item in listed)
 
 
+def test_login_with_email(client):
+    client.post(
+        "/api/auth/register",
+        json={
+            "username": "emailuser",
+            "email": "emailuser@example.com",
+            "password": "password123",
+        },
+    )
+    resp = client.post(
+        "/api/auth/login",
+        json={"username": "emailuser@example.com", "password": "password123"},
+    )
+    assert resp.status_code == 200
+    assert "access_token" in resp.get_json()
+
+
+def test_create_analysis_async_poll(client, auth):
+    import time
+
+    _, headers = auth
+    dataset_id = _upload(client, headers)
+    resp = client.post(
+        "/api/analyses",
+        json={"query": "async please", "dataset_id": dataset_id, "async": True},
+        headers=headers,
+    )
+    assert resp.status_code == 202
+    analysis = resp.get_json()["analysis"]
+    assert analysis["status"] == "processing"
+
+    final = None
+    for _ in range(40):
+        time.sleep(0.25)
+        polled = client.get(f"/api/analyses/{analysis['id']}", headers=headers)
+        final = polled.get_json()["analysis"]
+        if final["status"] in {"completed", "failed"}:
+            break
+    assert final is not None
+    assert final["status"] == "completed"
+    assert final["charts"]
+
+
 def test_create_analysis_missing_query(client, auth):
     _, headers = auth
     dataset_id = _upload(client, headers)
