@@ -370,3 +370,30 @@ def test_legacy_query_and_results(client, auth):
     assert results.status_code == 200
     assert isinstance(results.get_json(), list)
     assert results.get_json()[0]["status"] == "completed"
+
+
+def test_analysis_includes_summary_and_report(client, auth):
+    _, headers = auth
+    dataset_id = _upload(client, headers)
+    created = client.post(
+        "/api/analyses",
+        json={"query": "summarize", "dataset_id": dataset_id},
+        headers=headers,
+    )
+    assert created.status_code == 200
+    analysis = created.get_json()["analysis"]
+    assert analysis["summary"]["headline"]
+    assert analysis["summary"]["key_findings"]
+
+    report = client.get(f"/api/analyses/{analysis['id']}/report", headers=headers)
+    assert report.status_code == 200
+    assert b"Prysm" in report.data
+    assert b"Stakeholder Report" in report.data
+
+
+def test_demo_status_endpoint(client):
+    resp = client.get("/api/demo/status")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["ready_for_stakeholders"] is True
+    assert body["one_click_demo"] is True

@@ -147,4 +147,15 @@ def run_analysis(dataset_path: str, query: str) -> dict[str, Any]:
     }
     result["charts"] = execution.get("charts") or []
     result["insights"] = execution.get("insights")
+
+    from summary import build_executive_summary
+
+    result["summary"] = build_executive_summary(
+        query=query,
+        dataset_path=dataset_path,
+        insights=result.get("insights"),
+        charts=result.get("charts"),
+        plan=result.get("plan"),
+        demo_mode=bool(result.get("demo_mode")),
+    )
     return result

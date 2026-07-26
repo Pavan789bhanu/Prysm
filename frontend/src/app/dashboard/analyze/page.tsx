@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { BrainCircuit, Loader2, Sparkles } from "lucide-react";
+import { Loader2, Sparkles } from "lucide-react";
 import { ApiError, api, type Analysis, type Dataset } from "@/lib/api";
 import { useAuth } from "@/components/providers/auth-provider";
 import { AnalysisResult } from "@/components/dashboard/analysis-result";
+import { AnalysisProgress } from "@/components/dashboard/analysis-progress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -265,19 +266,7 @@ export default function AnalyzePage() {
 
         <div className="space-y-6">
           {loading ? (
-            <Card>
-              <CardContent className="flex min-h-[320px] flex-col items-center justify-center gap-4 p-10 text-center">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
-                  <BrainCircuit className="h-8 w-8 animate-pulse" />
-                </div>
-                <div>
-                  <p className="text-lg font-medium">AI agents are working</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Planning, generating code, and rendering visualizations...
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+            <AnalysisProgress key="running" />
           ) : result ? (
             <AnalysisResult analysis={result} />
           ) : (

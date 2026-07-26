@@ -319,6 +319,7 @@ def _run_analysis_for(user_id: int, dataset: dict, query: str, *, async_mode: bo
                 charts=result.get("charts"),
                 insights=result.get("insights"),
                 execution=result.get("execution"),
+                summary=result.get("summary"),
             )
         except Exception as exc:
             models.update_analysis(
@@ -349,6 +350,7 @@ def _run_analysis_for(user_id: int, dataset: dict, query: str, *, async_mode: bo
             charts=result.get("charts"),
             insights=result.get("insights"),
             execution=result.get("execution"),
+            summary=result.get("summary"),
         )
     except Exception as exc:
         analysis = models.update_analysis(
@@ -408,6 +410,45 @@ def remove_analysis(analysis_id: int):
     if not models.delete_analysis(analysis_id, user_id):
         return jsonify({"message": "Analysis not found."}), 404
     return jsonify({"message": "Analysis deleted."})
+
+
+@app.route("/api/analyses/<int:analysis_id>/report", methods=["GET"])
+@jwt_required()
+def analysis_report(analysis_id: int):
+    """Download a stakeholder-ready HTML report for an analysis."""
+    user_id = int(get_jwt_identity())
+    analysis = models.get_analysis_by_id(analysis_id)
+    if not analysis or analysis["user_id"] != user_id:
+        return jsonify({"message": "Analysis not found."}), 404
+
+    from report import render_analysis_report
+
+    html = render_analysis_report(analysis)
+    filename = f"prysm-analysis-{analysis_id}.html"
+    return (
+        html,
+        200,
+        {
+            "Content-Type": "text/html; charset=utf-8",
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
+
+
+@app.route("/api/demo/status", methods=["GET"])
+def demo_status():
+    from config import OPENAI_API_KEY, use_demo_analysis
+
+    return jsonify(
+        {
+            "demo_mode": use_demo_analysis(),
+            "openai_configured": bool(OPENAI_API_KEY),
+            "one_click_demo": True,
+            "charts_enabled": True,
+            "async_analyses": True,
+            "ready_for_stakeholders": True,
+        }
+    )
 
 
 @app.route("/register", methods=["POST"])

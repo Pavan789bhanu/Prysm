@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { api, type Analysis, type Dataset } from "@/lib/api";
 import { useAuth } from "@/components/providers/auth-provider";
+import { DemoGuide } from "@/components/dashboard/demo-guide";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,6 +47,11 @@ export default function DashboardOverviewPage() {
           Your AI analyst workspace for datasets, live charts, and generated code.
         </p>
       </div>
+
+      <DemoGuide
+        hasDatasets={datasets.length > 0}
+        hasAnalyses={analyses.length > 0}
+      />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[
