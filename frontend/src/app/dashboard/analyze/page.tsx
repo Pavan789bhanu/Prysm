@@ -268,7 +268,7 @@ export default function AnalyzePage() {
           {loading ? (
             <AnalysisProgress key="running" />
           ) : result ? (
-            <AnalysisResult analysis={result} />
+            <AnalysisResult analysis={result} autoPresentHint />
           ) : (
             <Card>
               <CardContent className="flex min-h-[320px] flex-col items-center justify-center gap-3 p-10 text-center">

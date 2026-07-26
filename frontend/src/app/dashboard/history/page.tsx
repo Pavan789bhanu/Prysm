@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { ApiError, api, type Analysis } from "@/lib/api";
@@ -77,7 +78,12 @@ export default function HistoryPage() {
                 ))}
               </div>
             ) : analyses.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No analyses yet.</p>
+              <div className="space-y-3 rounded-xl border border-dashed border-white/15 bg-white/5 p-4 text-sm text-muted-foreground">
+                <p>No analyses yet. Run the one-click demo to populate a board-ready result.</p>
+                <Link href="/dashboard/analyze" className="inline-flex text-primary underline">
+                  Go to Analyze → One-click demo
+                </Link>
+              </div>
             ) : (
               analyses.map((analysis) => (
                 <div

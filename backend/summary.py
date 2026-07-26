@@ -6,6 +6,52 @@ from typing import Any
 import pandas as pd
 
 
+def _business_findings(df: pd.DataFrame) -> list[str]:
+    """Extra narrative when the dataset looks like a sales / KPI table."""
+    findings: list[str] = []
+    cols = {c.lower(): c for c in df.columns}
+
+    revenue_col = cols.get("revenue")
+    region_col = cols.get("region")
+    product_col = cols.get("product")
+    spend_col = cols.get("marketing_spend") or cols.get("marketing spend")
+    units_col = cols.get("units_sold") or cols.get("units")
+
+    if revenue_col is not None:
+        total = float(df[revenue_col].sum())
+        findings.append(f"Total recorded revenue is ${total:,.0f} across the analyzed window.")
+        if region_col is not None:
+            by_region = df.groupby(region_col)[revenue_col].sum().sort_values(ascending=False)
+            top_region = by_region.index[0]
+            share = float(by_region.iloc[0] / total) if total else 0.0
+            findings.append(
+                f"Top region by revenue is {top_region} "
+                f"(${float(by_region.iloc[0]):,.0f}, {share:.0%} of total)."
+            )
+        if product_col is not None:
+            by_product = df.groupby(product_col)[revenue_col].sum().sort_values(ascending=False)
+            findings.append(
+                f"Leading product line is {by_product.index[0]} "
+                f"at ${float(by_product.iloc[0]):,.0f}."
+            )
+
+    if spend_col is not None and revenue_col is not None:
+        corr = df[[spend_col, revenue_col]].corr().iloc[0, 1]
+        if pd.notna(corr):
+            findings.append(
+                f"Marketing spend correlates with revenue at r={float(corr):.2f} "
+                "(useful signal for growth conversations)."
+            )
+
+    if units_col is not None:
+        findings.append(
+            f"Volume footprint: {int(df[units_col].sum()):,} units sold "
+            f"(avg {float(df[units_col].mean()):.1f} per row)."
+        )
+
+    return findings
+
+
 def build_executive_summary(
     *,
     query: str,
@@ -22,30 +68,40 @@ def build_executive_summary(
     columns = insights.get("columns") or []
     null_counts = insights.get("null_counts") or {}
     numeric_summary = insights.get("numeric_summary") or {}
+    df: pd.DataFrame | None = None
 
-    if dataset_path and (rows is None or not columns):
+    if dataset_path:
         try:
             df = pd.read_csv(dataset_path)
-            rows = len(df)
-            columns = list(df.columns.astype(str))
-            null_counts = {c: int(v) for c, v in df.isna().sum().items()}
-            numeric_summary = {
-                col: {
-                    "mean": float(df[col].mean()),
-                    "min": float(df[col].min()),
-                    "max": float(df[col].max()),
+            if rows is None or not columns:
+                rows = len(df)
+                columns = list(df.columns.astype(str))
+                null_counts = {c: int(v) for c, v in df.isna().sum().items()}
+                numeric_summary = {
+                    col: {
+                        "mean": float(df[col].mean()),
+                        "min": float(df[col].min()),
+                        "max": float(df[col].max()),
+                    }
+                    for col in df.select_dtypes(include="number").columns
                 }
-                for col in df.select_dtypes(include="number").columns
-            }
         except Exception:
-            pass
+            df = None
 
     rows = rows or 0
     findings: list[str] = []
 
-    if rows and columns:
+    if df is not None:
+        findings.extend(_business_findings(df))
+
+    if rows and columns and not findings:
         findings.append(
             f"Dataset covers {rows:,} rows across {len(columns)} columns."
+        )
+    elif rows and columns:
+        findings.insert(
+            0,
+            f"Dataset covers {rows:,} rows across {len(columns)} columns.",
         )
 
     if null_counts:
@@ -60,16 +116,14 @@ def build_executive_summary(
                 + ", ".join(f"{col} ({count})" for col, count in dirty)
                 + "."
             )
-        else:
+        elif not any("missing" in f.lower() for f in findings):
             findings.append("No missing values detected in the analyzed sample.")
 
-    # Highlight strongest numeric signal by range / mean when available.
     if numeric_summary:
         ranked = []
         for col, stats in numeric_summary.items():
             if not isinstance(stats, dict):
                 continue
-            # describe()-style nested or flat mean/min/max
             mean = stats.get("mean")
             if isinstance(mean, dict):
                 mean = mean.get("mean") or next(iter(mean.values()), None)
@@ -126,10 +180,20 @@ def build_executive_summary(
         ]
     )
 
+    # Keep the board deck tight.
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for item in findings:
+        key = item.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+
     return {
         "headline": headline,
         "narrative": narrative,
-        "key_findings": findings[:6],
+        "key_findings": deduped[:7],
         "demo_mode": demo_mode,
         "chart_count": len(charts),
         "row_count": rows,

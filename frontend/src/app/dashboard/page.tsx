@@ -13,6 +13,7 @@ import {
 import { api, type Analysis, type Dataset } from "@/lib/api";
 import { useAuth } from "@/components/providers/auth-provider";
 import { DemoGuide } from "@/components/dashboard/demo-guide";
+import { DemoReadinessBanner } from "@/components/dashboard/demo-readiness-banner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -47,6 +48,8 @@ export default function DashboardOverviewPage() {
           Your AI analyst workspace for datasets, live charts, and generated code.
         </p>
       </div>
+
+      <DemoReadinessBanner />
 
       <DemoGuide
         hasDatasets={datasets.length > 0}

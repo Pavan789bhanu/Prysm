@@ -111,8 +111,10 @@ Then open:
 
 1. http://localhost:3000/pitch — investor brief
 2. Register → **Analyze → One-click demo**
-3. Show **Executive summary** + live charts
-4. Click **Present** (Esc to exit) → **Export report**
+3. Show **Executive summary** + live charts (trend / region / correlation)
+4. Click **Present** (Esc to exit) → **Export report** → Print/Save PDF from the HTML
+
+**Room script (90 seconds):** Pitch page → register → one-click demo → Present → Export.
 
 Preflight:
 
@@ -120,6 +122,10 @@ Preflight:
 chmod +x scripts/demo_preflight.sh
 ./scripts/demo_preflight.sh
 ```
+
+## Demo mode
+
+If `OPENAI_API_KEY` is unset (or `DEMO_MODE=true`), Prysm uses a deterministic offline analysis pipeline that still **executes Python and renders Plotly charts**. Perfect for stakeholder demos without API spend.
 
 ## Production Deployment
 
