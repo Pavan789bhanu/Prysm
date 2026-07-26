@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { BrainCircuit, Loader2, Sparkles } from "lucide-react";
 import { ApiError, api, type Analysis, type Dataset } from "@/lib/api";
@@ -25,15 +26,25 @@ export default function AnalyzePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<Analysis | null>(null);
+  const [demoMode, setDemoMode] = useState(false);
 
   useEffect(() => {
     if (!token) return;
-    api.listDatasets(token).then((data) => {
-      setDatasets(data.datasets);
-      if (data.datasets[0]) {
-        setSelectedDatasetId(data.datasets[0].id);
-      }
-    });
+    api
+      .listDatasets(token)
+      .then((data) => {
+        setDatasets(data.datasets);
+        if (data.datasets[0]) {
+          setSelectedDatasetId(data.datasets[0].id);
+        }
+      })
+      .catch((err) => {
+        setError(err instanceof ApiError ? err.message : "Failed to load datasets.");
+      });
+    api
+      .me(token)
+      .then((data) => setDemoMode(Boolean(data.demo_mode)))
+      .catch(() => undefined);
   }, [token]);
 
   async function handleAnalyze() {
@@ -49,7 +60,40 @@ export default function AnalyzePage() {
       setResult(response.analysis);
       await refreshProfile();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Analysis failed.");
+      if (err instanceof ApiError) {
+        setError(err.message);
+        if (err.analysis) setResult(err.analysis);
+      } else {
+        setError("Analysis failed.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleLoadSampleAndAnalyze() {
+    if (!token) return;
+    setLoading(true);
+    setError("");
+    setResult(null);
+    try {
+      const sample = await api.loadSampleDataset(token);
+      setDatasets((prev) => [sample.dataset, ...prev]);
+      setSelectedDatasetId(sample.dataset.id);
+      setQuery(sample.suggested_query);
+      const response = await api.createAnalysis(token, {
+        dataset_id: sample.dataset.id,
+        query: sample.suggested_query,
+      });
+      setResult(response.analysis);
+      await refreshProfile();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.message);
+        if (err.analysis) setResult(err.analysis);
+      } else {
+        setError("Demo analysis failed.");
+      }
     } finally {
       setLoading(false);
     }
@@ -59,12 +103,30 @@ export default function AnalyzePage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Run analysis</h1>
-        <p className="mt-2 text-muted-foreground">
-          Ask a question in plain English and let AI agents generate your analysis pipeline.
-        </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Run analysis</h1>
+          <p className="mt-2 text-muted-foreground">
+            Ask a question in plain English. Prysm plans, generates, and executes the
+            analysis so you can see charts — not just code.
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          disabled={loading}
+          onClick={() => void handleLoadSampleAndAnalyze()}
+        >
+          <Sparkles className="h-4 w-4" />
+          One-click demo
+        </Button>
       </div>
+
+      {demoMode ? (
+        <p className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
+          Demo mode is on (no OpenAI key detected). Analyses use a deterministic offline
+          pipeline that still executes and renders real Plotly charts.
+        </p>
+      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[380px_1fr]">
         <Card>
@@ -79,7 +141,11 @@ export default function AnalyzePage() {
               <Label>Select dataset</Label>
               {datasets.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  Upload a dataset first to run an analysis.
+                  No datasets yet.{" "}
+                  <Link href="/dashboard/upload" className="text-primary underline">
+                    Upload a CSV
+                  </Link>{" "}
+                  or run the one-click demo.
                 </p>
               ) : (
                 <div className="space-y-2">
@@ -89,7 +155,9 @@ export default function AnalyzePage() {
                       type="button"
                       onClick={() => setSelectedDatasetId(dataset.id)}
                       className={`w-full rounded-xl px-4 py-3 text-left ${
-                        selectedDatasetId === dataset.id ? "glass-selected" : "glass-tile"
+                        selectedDatasetId === dataset.id
+                          ? "glass-selected"
+                          : "glass-tile"
                       }`}
                     >
                       <p className="font-medium">{dataset.filename}</p>
@@ -120,7 +188,7 @@ export default function AnalyzePage() {
                     key={example}
                     type="button"
                     onClick={() => setQuery(example)}
-                    className="glass-tile rounded-full px-3 py-1.5 text-left text-xs text-muted-foreground hover:text-white"
+                    className="rounded-full border border-border bg-card px-3 py-1.5 text-left text-xs text-muted-foreground transition-colors duration-200 hover:border-primary hover:text-foreground"
                   >
                     {example}
                   </button>
@@ -129,7 +197,7 @@ export default function AnalyzePage() {
             </div>
 
             {selectedDataset ? (
-              <div className="glass-tile rounded-xl p-4">
+              <div className="rounded-xl border border-border bg-muted/40 p-4">
                 <p className="mb-2 text-sm font-medium">Dataset preview</p>
                 <div className="flex flex-wrap gap-2">
                   {selectedDataset.columns.map((column) => (
@@ -155,7 +223,7 @@ export default function AnalyzePage() {
               {loading ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Running agents...
+                  Running agents + charts...
                 </>
               ) : (
                 <>
@@ -177,7 +245,7 @@ export default function AnalyzePage() {
                 <div>
                   <p className="text-lg font-medium">AI agents are working</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Planning, preprocessing, analyzing, and generating visualizations...
+                    Planning, generating code, and rendering visualizations...
                   </p>
                 </div>
               </CardContent>
@@ -190,8 +258,8 @@ export default function AnalyzePage() {
                 <Sparkles className="h-10 w-10 text-primary" />
                 <p className="text-lg font-medium">Your analysis will appear here</p>
                 <p className="max-w-md text-sm text-muted-foreground">
-                  Select a dataset, describe your goal, and Prysm will generate a
-                  complete Python analysis pipeline.
+                  Select a dataset, describe your goal, and Prysm will generate and execute
+                  a Python analysis pipeline with live charts.
                 </p>
               </CardContent>
             </Card>

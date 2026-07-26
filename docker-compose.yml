@@ -1,0 +1,34 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8000:8000"
+    environment:
+      SECRET_KEY: ${SECRET_KEY:-prysm-demo-secret-change-before-public-launch-0001}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEMO_MODE: ${DEMO_MODE:-auto}
+      FLASK_ENV: ${FLASK_ENV:-development}
+      FLASK_DEBUG: "false"
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@prysm.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-adminpass123}
+      PRYSM_DATA_DIR: /var/lib/prysm
+    volumes:
+      - prysm_data:/var/lib/prysm
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  prysm_data:

@@ -32,6 +32,27 @@ export type DatasetPreview = {
   sample: Record<string, unknown>[];
 };
 
+export type ChartResult = {
+  title: string;
+  html: string;
+  format?: string;
+};
+
+export type ExecutionResult = {
+  success?: boolean;
+  stdout?: string;
+  stderr?: string;
+};
+
+export type AnalysisInsights = {
+  rows?: number;
+  columns?: string[];
+  dtypes?: Record<string, string>;
+  null_counts?: Record<string, number>;
+  numeric_summary?: Record<string, Record<string, number>>;
+  figures?: string[];
+};
+
 export type Analysis = {
   id: number;
   user_id: number;
@@ -48,16 +69,21 @@ export type Analysis = {
   row_count?: number;
   column_count?: number;
   dataset_preview?: DatasetPreview | null;
+  charts?: ChartResult[];
+  insights?: AnalysisInsights | null;
+  execution?: ExecutionResult | null;
   created_at: string;
   completed_at?: string | null;
 };
 
 class ApiError extends Error {
   status: number;
+  analysis?: Analysis;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, analysis?: Analysis) {
     super(message);
     this.status = status;
+    this.analysis = analysis;
   }
 }
 
@@ -81,9 +107,6 @@ async function request<T>(
       headers,
     });
   } catch {
-    // fetch rejects (TypeError) when the server is unreachable, DNS fails,
-    // or CORS blocks the request before a response is returned. Surface a
-    // specific, actionable message instead of a generic "Unable to sign in".
     throw new ApiError(
       `Can't reach the server at ${API_URL}. Make sure the backend is running and NEXT_PUBLIC_API_URL is correct.`,
       0,
@@ -92,13 +115,18 @@ async function request<T>(
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new ApiError(data.message || "Request failed", response.status);
+    throw new ApiError(
+      data.message || "Request failed",
+      response.status,
+      data.analysis,
+    );
   }
   return data as T;
 }
 
 export const api = {
-  health: () => request<{ status: string }>("/api/health"),
+  health: () =>
+    request<{ status: string; demo_mode?: boolean }>("/api/health"),
 
   register: (payload: { username: string; email: string; password: string }) =>
     request<{ access_token: string; user: User }>("/api/auth/register", {
@@ -113,7 +141,11 @@ export const api = {
     }),
 
   me: (token: string) =>
-    request<{ user: User; stats: UserStats }>("/api/auth/me", {}, token),
+    request<{ user: User; stats: UserStats; demo_mode?: boolean }>(
+      "/api/auth/me",
+      {},
+      token,
+    ),
 
   listDatasets: (token: string) =>
     request<{ datasets: Dataset[] }>("/api/datasets", {}, token),
@@ -128,6 +160,20 @@ export const api = {
     );
   },
 
+  loadSampleDataset: (token: string) =>
+    request<{
+      dataset: Dataset;
+      message: string;
+      suggested_query: string;
+    }>("/api/datasets/sample", { method: "POST" }, token),
+
+  deleteDataset: (token: string, id: number) =>
+    request<{ message: string }>(
+      `/api/datasets/${id}`,
+      { method: "DELETE" },
+      token,
+    ),
+
   listAnalyses: (token: string) =>
     request<{ analyses: Analysis[] }>("/api/analyses", {}, token),
 
@@ -140,6 +186,13 @@ export const api = {
 
   getAnalysis: (token: string, id: number) =>
     request<{ analysis: Analysis }>(`/api/analyses/${id}`, {}, token),
+
+  deleteAnalysis: (token: string, id: number) =>
+    request<{ message: string }>(
+      `/api/analyses/${id}`,
+      { method: "DELETE" },
+      token,
+    ),
 };
 
 export { ApiError };

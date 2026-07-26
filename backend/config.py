@@ -3,32 +3,36 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 
-# Load backend/.env BEFORE reading any environment variables so that values in
-# the .env file actually take effect. Without this, SECRET_KEY, OPENAI_API_KEY,
-# CORS_ORIGINS, ADMIN_* and everything else would silently fall back to their
-# defaults — which is exactly why production config (and logins) appeared broken.
 try:
     from dotenv import load_dotenv
 
     load_dotenv(BASE_DIR / ".env")
-except ImportError:  # python-dotenv not installed — env vars still work.
+except ImportError:
     pass
 
-# Where datasets, results and the SQLite DB live. Override with PRYSM_DATA_DIR
-# (used in tests for full isolation, and handy for production volumes).
 DATA_DIR = Path(os.getenv("PRYSM_DATA_DIR", str(BASE_DIR / "data")))
 UPLOAD_DIR = DATA_DIR / "uploads"
 RESULTS_DIR = DATA_DIR / "results"
 DB_PATH = Path(os.getenv("DATABASE_PATH", str(DATA_DIR / "prysm.db")))
 
-# A 32+ byte key keeps HMAC-SHA256 happy. Override in .env for production.
-SECRET_KEY = os.getenv(
-    "SECRET_KEY", "prysm-dev-secret-change-in-production-0000000000000000"
-)
+_DEFAULT_SECRET = "prysm-dev-secret-change-in-production-0000000000000000"
+SECRET_KEY = os.getenv("SECRET_KEY", _DEFAULT_SECRET)
+FLASK_DEBUG = os.getenv("FLASK_DEBUG", "false").lower() == "true"
+FLASK_ENV = os.getenv("FLASK_ENV", "development").lower()
+
+# Fail closed in production if the secret was never rotated.
+if FLASK_ENV == "production" and SECRET_KEY == _DEFAULT_SECRET:
+    raise ValueError(
+        "SECRET_KEY must be set to a unique value when FLASK_ENV=production."
+    )
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 JWT_ACCESS_TOKEN_EXPIRES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRES", "86400"))
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+CODE_EXEC_TIMEOUT = int(os.getenv("CODE_EXEC_TIMEOUT", "45"))
+# When true (or when OPENAI_API_KEY is missing), use deterministic demo analysis.
+DEMO_MODE = os.getenv("DEMO_MODE", "auto").lower()
 
-# Admin bootstrap — an admin account is created/updated from these on startup.
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "").strip()
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "").strip().lower()
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
@@ -47,3 +51,12 @@ CORS_ORIGINS = [
 ]
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
+
+def use_demo_analysis() -> bool:
+    if DEMO_MODE in {"1", "true", "yes", "on"}:
+        return True
+    if DEMO_MODE in {"0", "false", "no", "off"}:
+        return False
+    # auto
+    return not bool(OPENAI_API_KEY)

@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { FileUp, Loader2, Upload } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { FileUp, Loader2, Sparkles, Trash2, Upload } from "lucide-react";
 import { ApiError, api, type Dataset } from "@/lib/api";
 import { useAuth } from "@/components/providers/auth-provider";
 import { Badge } from "@/components/ui/badge";
@@ -11,29 +11,35 @@ import { formatBytes, formatDate } from "@/lib/utils";
 
 export default function UploadPage() {
   const { token, refreshProfile } = useAuth();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    if (!token) return;
-
-    let active = true;
-    api.listDatasets(token).then((data) => {
-      if (active) setDatasets(data.datasets);
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [token]);
-
   const loadDatasets = useCallback(async () => {
     if (!token) return;
     const data = await api.listDatasets(token);
     setDatasets(data.datasets);
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    let active = true;
+    api
+      .listDatasets(token)
+      .then((data) => {
+        if (active) setDatasets(data.datasets);
+      })
+      .catch((err) => {
+        if (active) {
+          setError(err instanceof ApiError ? err.message : "Failed to load datasets.");
+        }
+      });
+    return () => {
+      active = false;
+    };
   }, [token]);
 
   async function handleUpload(file: File) {
@@ -58,6 +64,34 @@ export default function UploadPage() {
     }
   }
 
+  async function handleSample() {
+    if (!token) return;
+    setUploading(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await api.loadSampleDataset(token);
+      setMessage(`${result.message} Suggested query: ${result.suggested_query}`);
+      await loadDatasets();
+      await refreshProfile();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not load sample dataset.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleDelete(id: number) {
+    if (!token) return;
+    try {
+      await api.deleteDataset(token, id);
+      await loadDatasets();
+      await refreshProfile();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Delete failed.");
+    }
+  }
+
   function onDrop(event: React.DragEvent<HTMLDivElement>) {
     event.preventDefault();
     setDragActive(false);
@@ -67,22 +101,37 @@ export default function UploadPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Upload dataset</h1>
-        <p className="mt-2 text-muted-foreground">
-          Add CSV files to your workspace for AI-powered analysis.
-        </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Upload dataset</h1>
+          <p className="mt-2 text-muted-foreground">
+            Add CSV files to your workspace for AI-powered analysis.
+          </p>
+        </div>
+        <Button variant="outline" disabled={uploading} onClick={() => void handleSample()}>
+          <Sparkles className="h-4 w-4" />
+          Load sample dataset
+        </Button>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>Drag and drop your CSV</CardTitle>
           <CardDescription>
-            Supported format: CSV. Your file will be stored securely in your account.
+            Supported format: CSV up to 10 MB. Click anywhere in the dropzone to browse.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div
+            role="button"
+            tabIndex={0}
+            onClick={() => fileInputRef.current?.click()}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                fileInputRef.current?.click();
+              }
+            }}
             onDragOver={(event) => {
               event.preventDefault();
               setDragActive(true);
@@ -106,26 +155,24 @@ export default function UploadPage() {
             <p className="mt-1 text-sm text-muted-foreground">
               or choose a file from your computer
             </p>
-            <label className="mt-6">
-              <input
-                type="file"
-                accept=".csv"
-                className="hidden"
-                disabled={uploading}
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) void handleUpload(file);
-                }}
-              />
-              <span className="inline-flex">
-                <Button type="button" disabled={uploading} asChild>
-                  <span>
-                    <FileUp className="h-4 w-4" />
-                    Browse files
-                  </span>
-                </Button>
-              </span>
-            </label>
+            <div className="mt-6">
+              <Button type="button" disabled={uploading}>
+                <FileUp className="h-4 w-4" />
+                Browse files
+              </Button>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv"
+              className="hidden"
+              disabled={uploading}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void handleUpload(file);
+                event.target.value = "";
+              }}
+            />
           </div>
 
           {message ? (
@@ -149,7 +196,7 @@ export default function UploadPage() {
         <CardContent className="space-y-3">
           {datasets.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No datasets uploaded yet.
+              No datasets uploaded yet. Load the sample sales CSV to start a demo.
             </p>
           ) : (
             datasets.map((dataset) => (
@@ -174,7 +221,17 @@ export default function UploadPage() {
                     ) : null}
                   </div>
                 </div>
-                <Badge variant="muted">{formatDate(dataset.created_at)}</Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant="muted">{formatDate(dataset.created_at)}</Badge>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Delete ${dataset.filename}`}
+                    onClick={() => void handleDelete(dataset.id)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             ))
           )}

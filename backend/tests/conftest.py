@@ -33,6 +33,16 @@ def _fake_run_analysis(_dataset_path, query):
         "plan": "preprocessing_agent",
         "plan_desc": "clean then go",
         "dataset_preview": {"rows": 3, "columns": ["a", "b"], "sample": []},
+        "charts": [
+            {
+                "title": "Figure 1",
+                "html": "<html><body>chart</body></html>",
+                "format": "html",
+            }
+        ],
+        "insights": {"rows": 3, "columns": ["a", "b"]},
+        "execution": {"success": True, "stdout": "ok", "stderr": ""},
+        "demo_mode": True,
     }
 
 

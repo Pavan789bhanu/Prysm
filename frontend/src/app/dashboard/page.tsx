@@ -43,7 +43,7 @@ export default function DashboardOverviewPage() {
           Welcome back, {user?.username}
         </h1>
         <p className="mt-2 text-muted-foreground">
-          Your AI analyst workspace for datasets, queries, and generated code.
+          Your AI analyst workspace for datasets, live charts, and generated code.
         </p>
       </div>
 
@@ -184,8 +184,9 @@ export default function DashboardOverviewPage() {
             </p>
           ) : (
             recentAnalyses.map((analysis) => (
-              <div
+              <Link
                 key={analysis.id}
+                href="/dashboard/history"
                 className="glass-tile flex flex-col gap-3 rounded-xl px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div className="min-w-0">
@@ -208,7 +209,7 @@ export default function DashboardOverviewPage() {
                 >
                   {analysis.status}
                 </Badge>
-              </div>
+              </Link>
             ))
           )}
         </CardContent>

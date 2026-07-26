@@ -1,0 +1,29 @@
+"""Tests for demo analysis + restricted code execution."""
+from __future__ import annotations
+
+from pathlib import Path
+
+import pandas as pd
+
+from demo_service import build_demo_analysis, ensure_sample_csv
+from executor import execute_analysis_code
+
+
+def test_sample_csv_exists():
+    path = ensure_sample_csv()
+    assert path.exists()
+    df = pd.read_csv(path)
+    assert len(df) > 0
+    assert "revenue" in df.columns
+
+
+def test_demo_analysis_executes_and_returns_charts(tmp_path):
+    sample = ensure_sample_csv()
+    result = build_demo_analysis(str(sample), "show trends")
+    assert "plotly" in result["output"].lower()
+    assert result["demo_mode"] is True
+
+    execution = execute_analysis_code(result["output"], str(sample))
+    assert execution["success"] is True
+    assert len(execution["charts"]) >= 1
+    assert execution["insights"]["rows"] > 0

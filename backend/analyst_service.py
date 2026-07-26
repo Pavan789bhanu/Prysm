@@ -98,34 +98,53 @@ def serialize_prediction(prediction: Any) -> dict[str, Any]:
 
 
 def run_analysis(dataset_path: str, query: str) -> dict[str, Any]:
-    configure_openai()
-    dataset = pd.read_csv(dataset_path)
-    analyst = get_analyst()
-    output, agent_outputs = analyst.forward(dataset, query)
+    from config import use_demo_analysis
+    from demo_service import build_demo_analysis
+    from executor import execute_analysis_code
 
-    serialized_outputs = {
-        name: serialize_prediction(result) for name, result in agent_outputs.items()
+    if use_demo_analysis():
+        result = build_demo_analysis(dataset_path, query)
+    else:
+        configure_openai()
+        dataset = pd.read_csv(dataset_path)
+        analyst = get_analyst()
+        output, agent_outputs = analyst.forward(dataset, query)
+
+        serialized_outputs = {
+            name: serialize_prediction(result)
+            for name, result in agent_outputs.items()
+        }
+
+        plan = None
+        plan_desc = None
+        planner_output = serialized_outputs.get("PlannerAgent") or serialized_outputs.get(
+            "planner"
+        )
+        if isinstance(planner_output, dict):
+            plan = planner_output.get("plan")
+            plan_desc = planner_output.get("plan_desc")
+
+        result = {
+            "output": output,
+            "agent_outputs": serialized_outputs,
+            "plan": plan,
+            "plan_desc": plan_desc,
+            "dataset_preview": {
+                "rows": len(dataset),
+                "columns": list(dataset.columns),
+                "sample": json.loads(
+                    dataset.head(5).to_json(orient="records", date_format="iso")
+                ),
+            },
+            "demo_mode": False,
+        }
+
+    execution = execute_analysis_code(result.get("output") or "", dataset_path)
+    result["execution"] = {
+        "success": execution.get("success"),
+        "stdout": execution.get("stdout"),
+        "stderr": execution.get("stderr"),
     }
-
-    plan = None
-    plan_desc = None
-    planner_output = serialized_outputs.get("PlannerAgent") or serialized_outputs.get(
-        "planner"
-    )
-    if isinstance(planner_output, dict):
-        plan = planner_output.get("plan")
-        plan_desc = planner_output.get("plan_desc")
-
-    return {
-        "output": output,
-        "agent_outputs": serialized_outputs,
-        "plan": plan,
-        "plan_desc": plan_desc,
-        "dataset_preview": {
-            "rows": len(dataset),
-            "columns": list(dataset.columns),
-            "sample": json.loads(
-                dataset.head(5).to_json(orient="records", date_format="iso")
-            ),
-        },
-    }
+    result["charts"] = execution.get("charts") or []
+    result["insights"] = execution.get("insights")
+    return result

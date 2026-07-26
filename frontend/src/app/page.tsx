@@ -31,9 +31,9 @@ const features = [
   },
   {
     icon: LineChart,
-    title: "Production-ready code",
+    title: "Live charts & code",
     description:
-      "Receive a single, clean Python pipeline using pandas, statsmodels, and Plotly — copy, run, and ship.",
+      "Prysm generates and executes a Python pipeline — you get Plotly charts in the dashboard plus export-ready code.",
   },
   {
     icon: Shield,
@@ -45,20 +45,20 @@ const features = [
     icon: Wand2,
     title: "Multi-agent reasoning",
     description:
-      "Preprocessing, statistics, and visualization agents collaborate, then a combiner merges their work flawlessly.",
+      "Preprocessing, statistics, and visualization agents collaborate, then a combiner merges their work.",
   },
   {
     icon: Layers,
     title: "Full history",
     description:
-      "Every query, plan, and generated script is saved to your workspace so you can revisit and refine anytime.",
+      "Every query, plan, chart, and generated script is saved so you can revisit and refine anytime.",
   },
 ];
 
 const steps = [
   {
     title: "Upload a dataset",
-    description: "Add a CSV file to your secure workspace in one drag.",
+    description: "Add a CSV — or load the built-in sample for a one-click demo.",
     icon: Database,
   },
   {
@@ -67,13 +67,13 @@ const steps = [
     icon: Sparkles,
   },
   {
-    title: "Agents plan & build",
-    description: "Specialist agents preprocess, analyze, and visualize.",
+    title: "Agents plan & execute",
+    description: "Specialist agents preprocess, analyze, visualize, and run the code.",
     icon: BrainCircuit,
   },
   {
-    title: "Get your pipeline",
-    description: "Review a polished, ready-to-run Python script.",
+    title: "See charts & pipeline",
+    description: "Review live Plotly charts and a polished Python script.",
     icon: TerminalSquare,
   },
 ];
@@ -139,9 +139,9 @@ export default function HomePage() {
             <span className="text-gradient">refracted by AI agents</span>
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-muted-foreground">
-            Prysm orchestrates a team of specialized AI agents to plan, preprocess,
-            analyze, and visualize your data. Upload a CSV, ask a question, and get a
-            complete Python analysis pipeline in seconds.
+            Prysm orchestrates specialized AI agents to plan, preprocess, analyze, and
+            visualize your data. Upload a CSV, ask a question, and get live charts plus a
+            complete Python analysis pipeline.
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link href="/register">
@@ -159,7 +159,7 @@ export default function HomePage() {
           <div className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
             <span className="inline-flex items-center gap-1.5"><Check className="h-4 w-4 text-emerald-400" /> No credit card</span>
             <span className="inline-flex items-center gap-1.5"><Check className="h-4 w-4 text-emerald-400" /> Private by default</span>
-            <span className="inline-flex items-center gap-1.5"><Check className="h-4 w-4 text-emerald-400" /> Export-ready code</span>
+            <span className="inline-flex items-center gap-1.5"><Check className="h-4 w-4 text-emerald-400" /> Live charts + exportable code</span>
           </div>
 
           {/* Floating glass product preview */}

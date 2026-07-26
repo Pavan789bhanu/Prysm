@@ -1,5 +1,7 @@
 import os
 import sys
+import uuid
+from datetime import datetime, timezone
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -20,14 +22,17 @@ from config import (
     ADMIN_PASSWORD,
     ADMIN_USERNAME,
     CORS_ORIGINS,
+    FLASK_DEBUG,
     JWT_ACCESS_TOKEN_EXPIRES,
+    MAX_UPLOAD_BYTES,
     SECRET_KEY,
-    UPLOAD_DIR,
+    use_demo_analysis,
 )
 
 app = Flask(__name__)
 app.config["JWT_SECRET_KEY"] = SECRET_KEY
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = JWT_ACCESS_TOKEN_EXPIRES
+app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
 CORS(app, origins=CORS_ORIGINS, supports_credentials=True)
 jwt = JWTManager(app)
 
@@ -36,13 +41,6 @@ storage.ensure_dirs()
 
 
 def bootstrap_admin() -> None:
-    """Create/refresh the admin account from ADMIN_* environment variables.
-
-    Runs once at startup. This is the production-friendly replacement for the
-    old seed script: set ADMIN_USERNAME / ADMIN_EMAIL / ADMIN_PASSWORD in
-    backend/.env and a working admin login is provisioned automatically on
-    every boot — no manual seeding required.
-    """
     if not (ADMIN_USERNAME and ADMIN_PASSWORD):
         return
     if len(ADMIN_PASSWORD) < 8:
@@ -50,7 +48,10 @@ def bootstrap_admin() -> None:
         return
     email = ADMIN_EMAIL or f"{ADMIN_USERNAME}@local"
     _, created = models.create_or_update_admin(ADMIN_USERNAME, email, ADMIN_PASSWORD)
-    print(f"[admin] Admin account '{ADMIN_USERNAME}' {'created' if created else 'updated'}.")
+    print(
+        f"[admin] Admin account '{ADMIN_USERNAME}' "
+        f"{'created' if created else 'updated'}."
+    )
 
 
 bootstrap_admin()
@@ -58,7 +59,6 @@ bootstrap_admin()
 
 @app.cli.command("create-admin")
 def create_admin_command() -> None:
-    """Interactively create or update an admin account: `flask create-admin`."""
     import getpass
 
     username = input("Admin username: ").strip()
@@ -83,9 +83,21 @@ def public_user(user: dict) -> dict:
     }
 
 
+@app.errorhandler(413)
+def too_large(_error):
+    mb = MAX_UPLOAD_BYTES / (1024 * 1024)
+    return jsonify({"message": f"File too large. Max upload size is {mb:.0f} MB."}), 413
+
+
 @app.route("/api/health", methods=["GET"])
 def health():
-    return jsonify({"status": "ok", "service": "prysm-api"})
+    return jsonify(
+        {
+            "status": "ok",
+            "service": "prysm-api",
+            "demo_mode": use_demo_analysis(),
+        }
+    )
 
 
 @app.route("/api/auth/register", methods=["POST"])
@@ -129,12 +141,7 @@ def login():
         return jsonify({"message": "Invalid username or password."}), 401
 
     token = create_access_token(identity=str(user["id"]))
-    return jsonify(
-        {
-            "access_token": token,
-            "user": public_user(user),
-        }
-    )
+    return jsonify({"access_token": token, "user": public_user(user)})
 
 
 @app.route("/api/auth/me", methods=["GET"])
@@ -145,7 +152,46 @@ def me():
     if not user:
         return jsonify({"message": "User not found."}), 404
     stats = models.get_user_stats(user_id)
-    return jsonify({"user": public_user(user), "stats": stats})
+    return jsonify(
+        {
+            "user": public_user(user),
+            "stats": stats,
+            "demo_mode": use_demo_analysis(),
+        }
+    )
+
+
+def _store_upload(user_id: int, filename: str, file_obj) -> tuple[dict | None, tuple | None]:
+    import pandas as pd
+
+    filename = secure_filename(filename)
+    if not filename.lower().endswith(".csv"):
+        return None, (jsonify({"message": "Only CSV files are supported."}), 400)
+
+    username = models.get_user_by_id(user_id)["username"]
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    unique = uuid.uuid4().hex[:8]
+    stem = filename[:-4] if filename.lower().endswith(".csv") else filename
+    file_key = f"{username}/{stem}_{stamp}_{unique}.csv"
+    storage.save_upload(file_obj, file_key)
+
+    local_path = storage.get_local_path(file_key)
+    try:
+        dataset = pd.read_csv(local_path)
+    except Exception as exc:
+        storage.delete_file(file_key)
+        return None, (jsonify({"message": f"Invalid CSV file: {exc}"}), 400)
+
+    dataset_record = models.create_dataset(
+        user_id=user_id,
+        filename=filename,
+        file_key=file_key,
+        size_bytes=os.path.getsize(local_path),
+        row_count=len(dataset),
+        column_count=len(dataset.columns),
+        columns=list(dataset.columns),
+    )
+    return dataset_record, None
 
 
 @app.route("/api/datasets", methods=["GET"])
@@ -159,10 +205,6 @@ def list_datasets():
 @app.route("/api/datasets/upload", methods=["POST"])
 @jwt_required()
 def upload_dataset():
-    import pandas as pd
-    import uuid
-    from datetime import datetime, timezone
-
     user_id = int(get_jwt_identity())
     if "file" not in request.files:
         return jsonify({"message": "No file provided."}), 400
@@ -171,35 +213,46 @@ def upload_dataset():
     if not file.filename:
         return jsonify({"message": "No file selected."}), 400
 
-    filename = secure_filename(file.filename)
-    if not filename.lower().endswith(".csv"):
-        return jsonify({"message": "Only CSV files are supported."}), 400
-
-    username = models.get_user_by_id(user_id)["username"]
-    # Unique key so re-uploading the same filename never overwrites prior data.
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-    unique = uuid.uuid4().hex[:8]
-    stem = filename[:-4] if filename.lower().endswith(".csv") else filename
-    file_key = f"{username}/{stem}_{stamp}_{unique}.csv"
-    storage.save_upload(file, file_key)
-
-    local_path = storage.get_local_path(file_key)
-    try:
-        dataset = pd.read_csv(local_path)
-    except Exception as exc:
-        storage.delete_file(file_key)
-        return jsonify({"message": f"Invalid CSV file: {exc}"}), 400
-
-    dataset_record = models.create_dataset(
-        user_id=user_id,
-        filename=filename,
-        file_key=file_key,
-        size_bytes=os.path.getsize(local_path),
-        row_count=len(dataset),
-        column_count=len(dataset.columns),
-        columns=list(dataset.columns),
+    dataset_record, error = _store_upload(user_id, file.filename, file)
+    if error:
+        return error
+    return jsonify(
+        {"message": "Dataset uploaded successfully.", "dataset": dataset_record}
     )
-    return jsonify({"message": "Dataset uploaded successfully.", "dataset": dataset_record})
+
+
+@app.route("/api/datasets/sample", methods=["POST"])
+@jwt_required()
+def load_sample_dataset():
+    """One-click demo dataset for stakeholder presentations."""
+    from demo_service import sample_file_bytes
+
+    user_id = int(get_jwt_identity())
+    filename, buffer = sample_file_bytes()
+    dataset_record, error = _store_upload(user_id, filename, buffer)
+    if error:
+        return error
+    return jsonify(
+        {
+            "message": "Sample sales dataset loaded.",
+            "dataset": dataset_record,
+            "suggested_query": (
+                "Show correlations, revenue trends, and visualizations by region"
+            ),
+        }
+    )
+
+
+@app.route("/api/datasets/<int:dataset_id>", methods=["DELETE"])
+@jwt_required()
+def remove_dataset(dataset_id: int):
+    user_id = int(get_jwt_identity())
+    dataset = models.get_dataset_by_id(dataset_id)
+    if not dataset or dataset["user_id"] != user_id:
+        return jsonify({"message": "Dataset not found."}), 404
+    storage.delete_file(dataset["file_key"])
+    models.delete_dataset(dataset_id, user_id)
+    return jsonify({"message": "Dataset deleted."})
 
 
 @app.route("/api/analyses", methods=["GET"])
@@ -211,12 +264,6 @@ def list_analyses():
 
 
 def _run_analysis_for(user_id: int, dataset: dict, query: str):
-    """Create, execute, and persist an analysis. Returns (payload, status_code).
-
-    Shared by the modern and legacy routes so there's a single code path.
-    """
-    # Imported lazily so the server can boot and serve auth/datasets even if the
-    # heavy AI dependencies (dspy/openai) aren't installed yet.
     from analyst_service import run_analysis
 
     analysis = models.create_analysis(user_id, dataset["id"], query)
@@ -231,13 +278,19 @@ def _run_analysis_for(user_id: int, dataset: dict, query: str):
             plan_desc=result.get("plan_desc"),
             output=result.get("output"),
             agent_outputs=result.get("agent_outputs"),
+            dataset_preview=result.get("dataset_preview"),
+            charts=result.get("charts"),
+            insights=result.get("insights"),
+            execution=result.get("execution"),
         )
-        analysis["dataset_preview"] = result.get("dataset_preview")
     except Exception as exc:
         analysis = models.update_analysis(
             analysis["id"], status="failed", error_message=str(exc)
         )
-        return {"message": "Analysis failed.", "analysis": analysis}, 500
+        return {
+            "message": f"Analysis failed: {exc}",
+            "analysis": analysis,
+        }, 500
 
     return {"message": "Analysis completed.", "analysis": analysis}, 200
 
@@ -273,7 +326,15 @@ def get_analysis(analysis_id: int):
     return jsonify({"analysis": analysis})
 
 
-# Legacy routes for backward compatibility
+@app.route("/api/analyses/<int:analysis_id>", methods=["DELETE"])
+@jwt_required()
+def remove_analysis(analysis_id: int):
+    user_id = int(get_jwt_identity())
+    if not models.delete_analysis(analysis_id, user_id):
+        return jsonify({"message": "Analysis not found."}), 404
+    return jsonify({"message": "Analysis deleted."})
+
+
 @app.route("/register", methods=["POST"])
 def legacy_register():
     return register()
@@ -321,6 +382,7 @@ def legacy_results():
             "agent_outputs": item.get("agent_outputs"),
             "query": item.get("query"),
             "status": item.get("status"),
+            "charts": item.get("charts"),
         }
         for item in analyses
     ]
@@ -328,4 +390,4 @@ def legacy_results():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000, debug=True)
+    app.run(host="0.0.0.0", port=8000, debug=FLASK_DEBUG)
