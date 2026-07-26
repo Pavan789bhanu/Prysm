@@ -79,19 +79,39 @@ Dashboard runs at `http://localhost:3000`
 | `/api/auth/me` | GET | JWT | User profile + stats |
 | `/api/datasets` | GET | JWT | List datasets |
 | `/api/datasets/upload` | POST | JWT | Upload CSV |
+| `/api/datasets/sample` | POST | JWT | Load demo sales CSV |
+| `/api/datasets/:id` | DELETE | JWT | Delete dataset |
 | `/api/analyses` | GET | JWT | List analyses |
-| `/api/analyses` | POST | JWT | Run analysis |
+| `/api/analyses` | POST | JWT | Run analysis (generate + execute) |
 | `/api/analyses/:id` | GET | JWT | Get analysis details |
+| `/api/analyses/:id` | DELETE | JWT | Delete analysis |
 
 Legacy routes (`/login`, `/upload`, `/query`, `/results`) remain for backward compatibility.
 
+## Demo mode
+
+If `OPENAI_API_KEY` is unset (or `DEMO_MODE=true`), Prysm uses a deterministic offline analysis pipeline that still **executes Python and renders Plotly charts**. Perfect for stakeholder demos without API spend.
+
+One-click path in the UI: **Analyze → One-click demo**.
+
 ## Production Deployment
+
+### Docker Compose (recommended for demos)
+
+```bash
+export SECRET_KEY="a-long-unique-secret"
+export ADMIN_PASSWORD="adminpass123"
+docker compose up --build
+```
+
+- Frontend: http://localhost:3000
+- API: http://localhost:8000
 
 ### Backend (Gunicorn)
 
 ```bash
 cd backend
-gunicorn -w 4 -b 0.0.0.0:8000 app:app
+gunicorn -w 2 -b 0.0.0.0:8000 --timeout 120 app:app
 ```
 
 ### Frontend

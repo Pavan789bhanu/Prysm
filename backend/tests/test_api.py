@@ -215,6 +215,23 @@ def test_create_analysis_success(client, auth):
     assert analysis["plan"] == "preprocessing_agent"
     assert analysis["output"].startswith("import pandas")
     assert "preprocessing_agent" in analysis["agent_outputs"]
+    assert analysis["dataset_preview"]["rows"] == 3
+    assert len(analysis["charts"]) == 1
+    assert analysis["execution"]["success"] is True
+
+
+def test_sample_dataset_and_delete(client, auth):
+    _, headers = auth
+    sample = client.post("/api/datasets/sample", headers=headers)
+    assert sample.status_code == 200
+    dataset = sample.get_json()["dataset"]
+    assert dataset["filename"].endswith(".csv")
+    assert dataset["row_count"] > 0
+
+    deleted = client.delete(f"/api/datasets/{dataset['id']}", headers=headers)
+    assert deleted.status_code == 200
+    listed = client.get("/api/datasets", headers=headers).get_json()["datasets"]
+    assert all(item["id"] != dataset["id"] for item in listed)
 
 
 def test_create_analysis_missing_query(client, auth):

@@ -60,6 +60,10 @@ def init_db() -> None:
                 plan_desc TEXT,
                 output TEXT,
                 agent_outputs_json TEXT,
+                dataset_preview_json TEXT,
+                charts_json TEXT,
+                insights_json TEXT,
+                execution_json TEXT,
                 error_message TEXT,
                 created_at TEXT NOT NULL,
                 completed_at TEXT,
@@ -73,9 +77,21 @@ def init_db() -> None:
 
 def _migrate(conn) -> None:
     """Lightweight, idempotent migrations for databases created by older builds."""
-    columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
-    if "is_admin" not in columns:
+    user_columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
+    if "is_admin" not in user_columns:
         conn.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+
+    analysis_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(analyses)")
+    }
+    for column, ddl in (
+        ("dataset_preview_json", "TEXT"),
+        ("charts_json", "TEXT"),
+        ("insights_json", "TEXT"),
+        ("execution_json", "TEXT"),
+    ):
+        if column not in analysis_columns:
+            conn.execute(f"ALTER TABLE analyses ADD COLUMN {column} {ddl}")
 
 
 @contextmanager
@@ -258,6 +274,10 @@ def update_analysis(
     plan_desc: str | None = None,
     output: str | None = None,
     agent_outputs: dict | None = None,
+    dataset_preview: dict | None = None,
+    charts: list | None = None,
+    insights: dict | None = None,
+    execution: dict | None = None,
     error_message: str | None = None,
 ) -> dict[str, Any] | None:
     completed_at = utc_now() if status in {"completed", "failed"} else None
@@ -266,7 +286,9 @@ def update_analysis(
             """
             UPDATE analyses
             SET status = ?, plan = ?, plan_desc = ?, output = ?,
-                agent_outputs_json = ?, error_message = ?, completed_at = ?
+                agent_outputs_json = ?, dataset_preview_json = ?,
+                charts_json = ?, insights_json = ?, execution_json = ?,
+                error_message = ?, completed_at = ?
             WHERE id = ?
             """,
             (
@@ -275,12 +297,26 @@ def update_analysis(
                 plan_desc,
                 output,
                 json.dumps(agent_outputs) if agent_outputs is not None else None,
+                json.dumps(dataset_preview) if dataset_preview is not None else None,
+                json.dumps(charts) if charts is not None else None,
+                json.dumps(insights) if insights is not None else None,
+                json.dumps(execution) if execution is not None else None,
                 error_message,
                 completed_at,
                 analysis_id,
             ),
         )
     return get_analysis_by_id(analysis_id)
+
+
+def _hydrate_analysis(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+    data = dict(row)
+    data["agent_outputs"] = json.loads(data.pop("agent_outputs_json") or "{}")
+    data["dataset_preview"] = json.loads(data.pop("dataset_preview_json") or "null")
+    data["charts"] = json.loads(data.pop("charts_json") or "[]")
+    data["insights"] = json.loads(data.pop("insights_json") or "null")
+    data["execution"] = json.loads(data.pop("execution_json") or "null")
+    return data
 
 
 def get_analysis_by_id(analysis_id: int) -> dict[str, Any] | None:
@@ -296,9 +332,7 @@ def get_analysis_by_id(analysis_id: int) -> dict[str, Any] | None:
         ).fetchone()
     if not row:
         return None
-    data = dict(row)
-    data["agent_outputs"] = json.loads(data.pop("agent_outputs_json") or "{}")
-    return data
+    return _hydrate_analysis(row)
 
 
 def list_analyses_for_user(user_id: int) -> list[dict[str, Any]]:
@@ -313,12 +347,32 @@ def list_analyses_for_user(user_id: int) -> list[dict[str, Any]]:
             """,
             (user_id,),
         ).fetchall()
-    analyses = []
-    for row in rows:
-        data = dict(row)
-        data["agent_outputs"] = json.loads(data.pop("agent_outputs_json") or "{}")
-        analyses.append(data)
-    return analyses
+    return [_hydrate_analysis(row) for row in rows]
+
+
+def delete_dataset(dataset_id: int, user_id: int) -> bool:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT id FROM datasets WHERE id = ? AND user_id = ?",
+            (dataset_id, user_id),
+        ).fetchone()
+        if not row:
+            return False
+        conn.execute("DELETE FROM analyses WHERE dataset_id = ?", (dataset_id,))
+        conn.execute(
+            "DELETE FROM datasets WHERE id = ? AND user_id = ?",
+            (dataset_id, user_id),
+        )
+    return True
+
+
+def delete_analysis(analysis_id: int, user_id: int) -> bool:
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "DELETE FROM analyses WHERE id = ? AND user_id = ?",
+            (analysis_id, user_id),
+        )
+        return cursor.rowcount > 0
 
 
 def get_user_stats(user_id: int) -> dict[str, int]:
