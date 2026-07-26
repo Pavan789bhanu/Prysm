@@ -55,6 +55,10 @@ def app_module(tmp_path, monkeypatch):
     monkeypatch.setenv("ADMIN_PASSWORD", ADMIN_PASSWORD)
     monkeypatch.setenv("SECRET_KEY", "test-secret-key-that-is-definitely-32+bytes-long")
 
+    import rate_limit
+
+    rate_limit.reset_all_limiters()
+
     # Inject a lightweight fake analyst_service so the lazy import in
     # create_analysis resolves without the heavy AI stack.
     fake = types.ModuleType("analyst_service")

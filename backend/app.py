@@ -102,6 +102,12 @@ def health():
 
 @app.route("/api/auth/register", methods=["POST"])
 def register():
+    from rate_limit import auth_limiter
+
+    client_key = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
+    if not auth_limiter.allow(f"register:{client_key}"):
+        return jsonify({"message": "Too many registration attempts. Try again shortly."}), 429
+
     data = request.get_json(silent=True) or {}
     username = (data.get("username") or "").strip()
     email = (data.get("email") or "").strip().lower()
@@ -132,13 +138,27 @@ def register():
 
 @app.route("/api/auth/login", methods=["POST"])
 def login():
+    from rate_limit import auth_limiter
+
+    client_key = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
+    if not auth_limiter.allow(f"login:{client_key}"):
+        return jsonify({"message": "Too many login attempts. Try again shortly."}), 429
+
     data = request.get_json(silent=True) or {}
-    username = (data.get("username") or "").strip()
+    identifier = (data.get("username") or data.get("email") or "").strip()
     password = data.get("password") or ""
 
-    user = models.verify_user(username, password)
+    user = None
+    if identifier:
+        if "@" in identifier:
+            user = models.get_user_by_email(identifier.lower())
+        else:
+            user = models.get_user_by_username(identifier)
+        if user and not models.verify_user(user["username"], password):
+            user = None
+
     if not user:
-        return jsonify({"message": "Invalid username or password."}), 401
+        return jsonify({"message": "Invalid username/email or password."}), 401
 
     token = create_access_token(identity=str(user["id"]))
     return jsonify({"access_token": token, "user": public_user(user)})
@@ -202,10 +222,24 @@ def list_datasets():
     return jsonify({"datasets": datasets})
 
 
+@app.after_request
+def set_security_headers(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    return response
+
+
 @app.route("/api/datasets/upload", methods=["POST"])
 @jwt_required()
 def upload_dataset():
+    from rate_limit import upload_limiter
+
     user_id = int(get_jwt_identity())
+    if not upload_limiter.allow(f"upload:{user_id}"):
+        return jsonify({"message": "Upload rate limit exceeded. Try again shortly."}), 429
+
     if "file" not in request.files:
         return jsonify({"message": "No file provided."}), 400
 
@@ -263,11 +297,44 @@ def list_analyses():
     return jsonify({"analyses": analyses})
 
 
-def _run_analysis_for(user_id: int, dataset: dict, query: str):
+def _run_analysis_for(user_id: int, dataset: dict, query: str, *, async_mode: bool = False):
     from analyst_service import run_analysis
+    from jobs import start_analysis_job
 
     analysis = models.create_analysis(user_id, dataset["id"], query)
     analysis = models.update_analysis(analysis["id"], status="processing")
+
+    def worker() -> None:
+        try:
+            local_path = storage.get_local_path(dataset["file_key"])
+            result = run_analysis(local_path, query)
+            models.update_analysis(
+                analysis["id"],
+                status="completed",
+                plan=result.get("plan"),
+                plan_desc=result.get("plan_desc"),
+                output=result.get("output"),
+                agent_outputs=result.get("agent_outputs"),
+                dataset_preview=result.get("dataset_preview"),
+                charts=result.get("charts"),
+                insights=result.get("insights"),
+                execution=result.get("execution"),
+            )
+        except Exception as exc:
+            models.update_analysis(
+                analysis["id"], status="failed", error_message=str(exc)
+            )
+
+    if async_mode:
+        start_analysis_job(analysis["id"], worker)
+        fresh = models.get_analysis_by_id(analysis["id"])
+        return {
+            "message": "Analysis started.",
+            "analysis": fresh,
+            "async": True,
+        }, 202
+
+    # Synchronous path (legacy + tests).
     try:
         local_path = storage.get_local_path(dataset["file_key"])
         result = run_analysis(local_path, query)
@@ -298,10 +365,16 @@ def _run_analysis_for(user_id: int, dataset: dict, query: str):
 @app.route("/api/analyses", methods=["POST"])
 @jwt_required()
 def create_analysis():
+    from rate_limit import analysis_limiter
+
     user_id = int(get_jwt_identity())
+    if not analysis_limiter.allow(f"analysis:{user_id}"):
+        return jsonify({"message": "Analysis rate limit exceeded. Try again shortly."}), 429
+
     data = request.get_json(silent=True) or {}
     query = (data.get("query") or "").strip()
     dataset_id = data.get("dataset_id")
+    async_mode = bool(data.get("async", False))
 
     if not query:
         return jsonify({"message": "Query is required."}), 400
@@ -312,7 +385,9 @@ def create_analysis():
     if not dataset or dataset["user_id"] != user_id:
         return jsonify({"message": "Dataset not found."}), 404
 
-    payload, status = _run_analysis_for(user_id, dataset, query)
+    payload, status = _run_analysis_for(
+        user_id, dataset, query, async_mode=async_mode
+    )
     return jsonify(payload), status
 
 
