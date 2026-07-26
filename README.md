@@ -85,14 +85,41 @@ Dashboard runs at `http://localhost:3000`
 | `/api/analyses` | POST | JWT | Run analysis (generate + execute) |
 | `/api/analyses/:id` | GET | JWT | Get analysis details |
 | `/api/analyses/:id` | DELETE | JWT | Delete analysis |
+| `/api/analyses/:id/report` | GET | JWT | Download stakeholder HTML report |
+| `/api/demo/status` | GET | No | Demo readiness flags |
 
 Legacy routes (`/login`, `/upload`, `/query`, `/results`) remain for backward compatibility.
 
-## Demo mode
+## Stakeholder demo (fundraiser-ready)
 
-If `OPENAI_API_KEY` is unset (or `DEMO_MODE=true`), Prysm uses a deterministic offline analysis pipeline that still **executes Python and renders Plotly charts**. Perfect for stakeholder demos without API spend.
+**Fastest path (no OpenAI key required):**
 
-One-click path in the UI: **Analyze → One-click demo**.
+```bash
+# Terminal 1 — API
+cd backend
+export SECRET_KEY="demo-secret-change-me"
+export DEMO_MODE=true   # optional; auto-enables when OPENAI_API_KEY is unset
+pip install -r requirements.txt
+python3 app.py
+
+# Terminal 2 — UI
+cd frontend
+npm install && npm run dev
+```
+
+Then open:
+
+1. http://localhost:3000/pitch — investor brief
+2. Register → **Analyze → One-click demo**
+3. Show **Executive summary** + live charts
+4. Click **Present** (Esc to exit) → **Export report**
+
+Preflight:
+
+```bash
+chmod +x scripts/demo_preflight.sh
+./scripts/demo_preflight.sh
+```
 
 ## Production Deployment
 

@@ -1,16 +1,21 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
   Check,
   Copy,
+  Download,
   FileCode2,
   GitBranch,
   LineChart,
+  Maximize2,
+  Sparkles,
   Table2,
+  X,
 } from "lucide-react";
-import type { Analysis } from "@/lib/api";
+import { ApiError, api, type Analysis } from "@/lib/api";
+import { useAuth } from "@/components/providers/auth-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,6 +47,11 @@ function CodeBlock({ code, title }: { code: string; title: string }) {
 }
 
 export function AnalysisResult({ analysis }: { analysis: Analysis }) {
+  const { token } = useAuth();
+  const [presenting, setPresenting] = useState(false);
+  const [reportBusy, setReportBusy] = useState(false);
+  const [reportError, setReportError] = useState("");
+
   const agentEntries = useMemo(
     () => Object.entries(analysis.agent_outputs || {}),
     [analysis.agent_outputs],
@@ -52,6 +62,34 @@ export function AnalysisResult({ analysis }: { analysis: Analysis }) {
   const charts = analysis.charts ?? [];
   const insights = analysis.insights;
   const execution = analysis.execution;
+  const summary = analysis.summary;
+
+  useEffect(() => {
+    if (!presenting) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPresenting(false);
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [presenting]);
+
+  async function handleReport() {
+    if (!token) return;
+    setReportBusy(true);
+    setReportError("");
+    try {
+      await api.downloadReport(token, analysis.id);
+    } catch (err) {
+      setReportError(err instanceof ApiError ? err.message : "Report download failed.");
+    } finally {
+      setReportBusy(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -71,14 +109,28 @@ export function AnalysisResult({ analysis }: { analysis: Analysis }) {
             </Badge>
             <Badge variant="muted">{analysis.filename}</Badge>
             <Badge variant="muted">{formatDate(analysis.created_at)}</Badge>
-            {execution?.success ? (
-              <Badge variant="success">charts rendered</Badge>
-            ) : null}
+            {execution?.success ? <Badge variant="success">charts rendered</Badge> : null}
           </div>
           <CardTitle className="text-xl">{analysis.query}</CardTitle>
           <CardDescription>
             AI-generated analysis with executed insights and visualizations
           </CardDescription>
+          <div className="flex flex-wrap gap-2 pt-2">
+            <Button size="sm" variant="outline" onClick={() => setPresenting(true)}>
+              <Maximize2 className="h-4 w-4" />
+              Present
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={reportBusy || analysis.status !== "completed"}
+              onClick={() => void handleReport()}
+            >
+              <Download className="h-4 w-4" />
+              {reportBusy ? "Preparing…" : "Export report"}
+            </Button>
+          </div>
+          {reportError ? <p className="pt-2 text-sm text-rose-200">{reportError}</p> : null}
         </CardHeader>
         {analysis.error_message ? (
           <CardContent>
@@ -88,6 +140,28 @@ export function AnalysisResult({ analysis }: { analysis: Analysis }) {
           </CardContent>
         ) : null}
       </Card>
+
+      {summary ? (
+        <Card className="border-fuchsia-400/25 bg-gradient-to-br from-fuchsia-500/10 to-transparent">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-accent" />
+              <CardTitle>Executive summary</CardTitle>
+            </div>
+            <CardDescription>{summary.headline}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm leading-7 text-muted-foreground">{summary.narrative}</p>
+            <ul className="space-y-2">
+              {(summary.key_findings || []).map((finding) => (
+                <li key={finding} className="glass-tile rounded-xl px-4 py-3 text-sm">
+                  {finding}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {charts.length > 0 ? (
         <Card>
@@ -180,10 +254,7 @@ export function AnalysisResult({ analysis }: { analysis: Analysis }) {
                   </thead>
                   <tbody>
                     {previewRows.map((row, index) => (
-                      <tr
-                        key={index}
-                        className="border-t border-white/10 text-foreground/90"
-                      >
+                      <tr key={index} className="border-t border-white/10 text-foreground/90">
                         {previewColumns.map((column) => (
                           <td key={column} className="px-3 py-2 font-mono text-xs">
                             {row[column] == null ? "—" : String(row[column])}
@@ -268,9 +339,7 @@ export function AnalysisResult({ analysis }: { analysis: Analysis }) {
                   {commentary ? (
                     <p className="mb-3 text-sm text-muted-foreground">{commentary}</p>
                   ) : null}
-                  {plan ? (
-                    <p className="mb-3 font-mono text-sm text-primary">{plan}</p>
-                  ) : null}
+                  {plan ? <p className="mb-3 font-mono text-sm text-primary">{plan}</p> : null}
                   {planDesc ? (
                     <p className="mb-3 text-sm text-muted-foreground">{planDesc}</p>
                   ) : null}
@@ -280,6 +349,54 @@ export function AnalysisResult({ analysis }: { analysis: Analysis }) {
             })}
           </CardContent>
         </Card>
+      ) : null}
+
+      {presenting ? (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-[#07040f]/95 p-6 backdrop-blur-xl">
+          <div className="mx-auto flex max-w-5xl flex-col gap-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm uppercase tracking-[0.2em] text-accent">Prysm live demo</p>
+                <h2 className="mt-2 text-3xl font-bold text-white">{analysis.query}</h2>
+                <p className="mt-2 max-w-3xl text-muted-foreground">
+                  {summary?.narrative || "Executed multi-agent analysis with live charts."}
+                </p>
+                <p className="mt-3 text-xs text-muted-foreground/80">Press Esc to exit presentation</p>
+              </div>
+              <Button variant="outline" onClick={() => setPresenting(false)}>
+                <X className="h-4 w-4" />
+                Close
+              </Button>
+            </div>
+            {(summary?.key_findings || []).length > 0 ? (
+              <div className="grid gap-3 md:grid-cols-2">
+                {(summary?.key_findings || []).map((finding) => (
+                  <div key={finding} className="glass-panel rounded-2xl p-4 text-sm">
+                    {finding}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            <div className="space-y-4">
+              {charts.map((chart, index) => (
+                <div
+                  key={`present-${chart.title}-${index}`}
+                  className="overflow-hidden rounded-2xl border border-white/12 bg-white"
+                >
+                  <div className="border-b border-black/5 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-800">
+                    {chart.title}
+                  </div>
+                  <iframe
+                    title={chart.title}
+                    srcDoc={chart.html}
+                    className="h-[460px] w-full border-0"
+                    sandbox="allow-scripts allow-same-origin"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       ) : null}
     </div>
   );

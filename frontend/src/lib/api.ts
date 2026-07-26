@@ -53,6 +53,16 @@ export type AnalysisInsights = {
   figures?: string[];
 };
 
+export type AnalysisSummary = {
+  headline?: string;
+  narrative?: string;
+  key_findings?: string[];
+  demo_mode?: boolean;
+  chart_count?: number;
+  row_count?: number;
+  column_count?: number;
+};
+
 export type Analysis = {
   id: number;
   user_id: number;
@@ -72,6 +82,7 @@ export type Analysis = {
   charts?: ChartResult[];
   insights?: AnalysisInsights | null;
   execution?: ExecutionResult | null;
+  summary?: AnalysisSummary | null;
   created_at: string;
   completed_at?: string | null;
 };
@@ -199,6 +210,30 @@ export const api = {
       { method: "DELETE" },
       token,
     ),
+
+  downloadReport: async (token: string, id: number) => {
+    const response = await fetch(`${API_URL}/api/analyses/${id}/report`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new ApiError(data.message || "Report download failed", response.status);
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `prysm-analysis-${id}.html`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  },
+
+  demoStatus: () =>
+    request<{
+      demo_mode: boolean;
+      openai_configured: boolean;
+      ready_for_stakeholders: boolean;
+    }>("/api/demo/status"),
 };
 
 export { ApiError };

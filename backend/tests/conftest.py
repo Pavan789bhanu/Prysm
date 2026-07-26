@@ -42,6 +42,15 @@ def _fake_run_analysis(_dataset_path, query):
         ],
         "insights": {"rows": 3, "columns": ["a", "b"]},
         "execution": {"success": True, "stdout": "ok", "stderr": ""},
+        "summary": {
+            "headline": "Analysis complete",
+            "narrative": "Prysm analyzed the dataset and rendered charts.",
+            "key_findings": ["3 rows analyzed", "1 chart rendered"],
+            "demo_mode": True,
+            "chart_count": 1,
+            "row_count": 3,
+            "column_count": 2,
+        },
         "demo_mode": True,
     }
 

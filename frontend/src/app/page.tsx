@@ -115,6 +115,7 @@ export default function HomePage() {
             <a href="#features" className="transition-colors hover:text-white">Features</a>
             <a href="#how" className="transition-colors hover:text-white">How it works</a>
             <a href="#agents" className="transition-colors hover:text-white">Agents</a>
+            <Link href="/pitch" className="transition-colors hover:text-white">Pitch</Link>
           </nav>
           <div className="flex items-center gap-2">
             <Link href="/login">

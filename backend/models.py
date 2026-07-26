@@ -64,6 +64,7 @@ def init_db() -> None:
                 charts_json TEXT,
                 insights_json TEXT,
                 execution_json TEXT,
+                summary_json TEXT,
                 error_message TEXT,
                 created_at TEXT NOT NULL,
                 completed_at TEXT,
@@ -89,6 +90,7 @@ def _migrate(conn) -> None:
         ("charts_json", "TEXT"),
         ("insights_json", "TEXT"),
         ("execution_json", "TEXT"),
+        ("summary_json", "TEXT"),
     ):
         if column not in analysis_columns:
             conn.execute(f"ALTER TABLE analyses ADD COLUMN {column} {ddl}")
@@ -278,6 +280,7 @@ def update_analysis(
     charts: list | None = None,
     insights: dict | None = None,
     execution: dict | None = None,
+    summary: dict | None = None,
     error_message: str | None = None,
 ) -> dict[str, Any] | None:
     completed_at = utc_now() if status in {"completed", "failed"} else None
@@ -288,6 +291,7 @@ def update_analysis(
             SET status = ?, plan = ?, plan_desc = ?, output = ?,
                 agent_outputs_json = ?, dataset_preview_json = ?,
                 charts_json = ?, insights_json = ?, execution_json = ?,
+                summary_json = ?,
                 error_message = ?, completed_at = ?
             WHERE id = ?
             """,
@@ -301,6 +305,7 @@ def update_analysis(
                 json.dumps(charts) if charts is not None else None,
                 json.dumps(insights) if insights is not None else None,
                 json.dumps(execution) if execution is not None else None,
+                json.dumps(summary) if summary is not None else None,
                 error_message,
                 completed_at,
                 analysis_id,
@@ -316,6 +321,7 @@ def _hydrate_analysis(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
     data["charts"] = json.loads(data.pop("charts_json") or "[]")
     data["insights"] = json.loads(data.pop("insights_json") or "null")
     data["execution"] = json.loads(data.pop("execution_json") or "null")
+    data["summary"] = json.loads(data.pop("summary_json") or "null")
     return data
 
 
