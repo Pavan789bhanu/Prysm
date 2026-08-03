@@ -20,7 +20,7 @@ export default function UploadPage() {
 
   const loadDatasets = useCallback(async () => {
     if (!token) return;
-    const data = await api.listDatasets(token);
+    const data = await api.listDatasets();
     setDatasets(data.datasets);
   }, [token]);
 
@@ -28,7 +28,7 @@ export default function UploadPage() {
     if (!token) return;
     let active = true;
     api
-      .listDatasets(token)
+      .listDatasets()
       .then((data) => {
         if (active) setDatasets(data.datasets);
       })
@@ -57,7 +57,7 @@ export default function UploadPage() {
     setError("");
     setMessage("");
     try {
-      const result = await api.uploadDataset(token, file);
+      const result = await api.uploadDataset(file);
       setMessage(result.message);
       await loadDatasets();
       await refreshProfile();
@@ -74,7 +74,7 @@ export default function UploadPage() {
     setError("");
     setMessage("");
     try {
-      const result = await api.loadSampleDataset(token);
+      const result = await api.loadSampleDataset();
       setMessage(`${result.message} Suggested query: ${result.suggested_query}`);
       await loadDatasets();
       await refreshProfile();
@@ -91,7 +91,7 @@ export default function UploadPage() {
       return;
     }
     try {
-      await api.deleteDataset(token, id);
+      await api.deleteDataset(id);
       await loadDatasets();
       await refreshProfile();
     } catch (err) {

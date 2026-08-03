@@ -29,7 +29,7 @@ export default function DashboardOverviewPage() {
 
   useEffect(() => {
     if (!token) return;
-    Promise.all([api.listDatasets(token), api.listAnalyses(token)])
+    Promise.all([api.listDatasets(), api.listAnalyses()])
       .then(([datasetData, analysisData]) => {
         setDatasets(datasetData.datasets);
         setAnalyses(analysisData.analyses);

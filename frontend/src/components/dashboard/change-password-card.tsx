@@ -24,7 +24,7 @@ export function ChangePasswordCard() {
     setLoading(true);
     setError("");
     try {
-      await api.changePassword(token, {
+      await api.changePassword({
         current_password: currentPassword,
         new_password: newPassword,
       });

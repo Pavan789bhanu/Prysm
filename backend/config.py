@@ -28,10 +28,22 @@ if FLASK_ENV == "production" and SECRET_KEY == _DEFAULT_SECRET:
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 JWT_ACCESS_TOKEN_EXPIRES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRES", "86400"))
+JWT_COOKIE_SECURE = os.getenv("JWT_COOKIE_SECURE", "false").lower() == "true"
+JWT_COOKIE_SAMESITE = os.getenv("JWT_COOKIE_SAMESITE", "Lax")
+PASSWORD_RESET_LOG_TOKENS = os.getenv("PASSWORD_RESET_LOG_TOKENS", "true").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+PASSWORD_RESET_TTL_SECONDS = int(os.getenv("PASSWORD_RESET_TTL_SECONDS", "3600"))
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
 CODE_EXEC_TIMEOUT = int(os.getenv("CODE_EXEC_TIMEOUT", "45"))
 MAX_DATASETS_PER_USER = int(os.getenv("MAX_DATASETS_PER_USER", "50"))
 MAX_ANALYSES_PER_USER = int(os.getenv("MAX_ANALYSES_PER_USER", "100"))
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+REDIS_URL = os.getenv("REDIS_URL", "").strip()
+JOB_BACKEND = os.getenv("JOB_BACKEND", "auto").lower()
 # When true (or when OPENAI_API_KEY is missing), use deterministic demo analysis.
 DEMO_MODE = os.getenv("DEMO_MODE", "auto").lower()
 
@@ -53,6 +65,13 @@ CORS_ORIGINS = [
 ]
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
+if DATABASE_URL and not DATABASE_URL.startswith("sqlite"):
+    raise ValueError(
+        "DATABASE_URL is set to a non-SQLite engine. Postgres support is not "
+        "implemented yet — unset DATABASE_URL or use SQLite via DATABASE_PATH / "
+        "PRYSM_DATA_DIR."
+    )
 
 
 def use_demo_analysis() -> bool:

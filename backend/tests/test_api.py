@@ -86,6 +86,41 @@ def test_login_success(client, auth):
     assert resp.get_json()["access_token"]
 
 
+def test_password_reset_flow(client, auth):
+    # Ensure user exists via auth fixture.
+    req = client.post(
+        "/api/auth/password-reset/request",
+        json={"email": "venu@example.com"},
+    )
+    assert req.status_code == 200
+    body = req.get_json()
+    assert "message" in body
+    link = body.get("dev_reset_link")
+    assert link and "token=" in link
+    token = link.split("token=", 1)[1]
+
+    confirm = client.post(
+        "/api/auth/password-reset/confirm",
+        json={"token": token, "new_password": "newpassword99"},
+    )
+    assert confirm.status_code == 200
+
+    login = client.post(
+        "/api/auth/login",
+        json={"username": "venu", "password": "newpassword99"},
+    )
+    assert login.status_code == 200
+
+
+def test_login_sets_access_cookie(client, auth):
+    resp = client.post(
+        "/api/auth/login", json={"username": "venu", "password": "password123"}
+    )
+    assert resp.status_code == 200
+    cookies = ";".join(resp.headers.getlist("Set-Cookie"))
+    assert "prysm_access_token=" in cookies
+
+
 def test_change_password(client, auth):
     token, headers = auth
     bad = client.post(

@@ -33,7 +33,7 @@ export default function AnalyzePage() {
   useEffect(() => {
     if (!token) return;
     api
-      .listDatasets(token)
+      .listDatasets()
       .then((data) => {
         setDatasets(data.datasets);
         if (data.datasets[0]) {
@@ -44,7 +44,7 @@ export default function AnalyzePage() {
         setError(err instanceof ApiError ? err.message : "Failed to load datasets.");
       });
     api
-      .me(token)
+      .me()
       .then((data) => setDemoMode(Boolean(data.demo_mode)))
       .catch(() => undefined);
   }, [token]);
@@ -53,7 +53,7 @@ export default function AnalyzePage() {
     if (!token) return;
     const maxAttempts = 90;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const { analysis } = await api.getAnalysis(token, analysisId);
+      const { analysis } = await api.getAnalysis(analysisId);
       if (analysis.status === "completed" || analysis.status === "failed") {
         setResult(analysis);
         if (analysis.status === "failed") {
@@ -73,7 +73,7 @@ export default function AnalyzePage() {
     setError("");
     setResult(null);
     try {
-      const response = await api.createAnalysis(token, {
+      const response = await api.createAnalysis({
         dataset_id: selectedDatasetId,
         query: query.trim(),
         async: true,
@@ -101,7 +101,7 @@ export default function AnalyzePage() {
   async function handleCancel() {
     if (!token || !activeAnalysisId) return;
     try {
-      await api.cancelAnalysis(token, activeAnalysisId);
+      await api.cancelAnalysis(activeAnalysisId);
       setError("Cancellation requested. Waiting for the worker to stop…");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not cancel analysis.");
@@ -114,11 +114,11 @@ export default function AnalyzePage() {
     setError("");
     setResult(null);
     try {
-      const sample = await api.loadSampleDataset(token);
+      const sample = await api.loadSampleDataset();
       setDatasets((prev) => [sample.dataset, ...prev]);
       setSelectedDatasetId(sample.dataset.id);
       setQuery(sample.suggested_query);
-      const response = await api.createAnalysis(token, {
+      const response = await api.createAnalysis({
         dataset_id: sample.dataset.id,
         query: sample.suggested_query,
         async: true,

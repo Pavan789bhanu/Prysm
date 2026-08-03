@@ -10,6 +10,8 @@ from flask_jwt_extended import (
     create_access_token,
     get_jwt_identity,
     jwt_required,
+    set_access_cookies,
+    unset_jwt_cookies,
 )
 from werkzeug.utils import secure_filename
 
@@ -23,20 +25,33 @@ from config import (
     ADMIN_USERNAME,
     CORS_ORIGINS,
     FLASK_DEBUG,
+    FRONTEND_URL,
     JWT_ACCESS_TOKEN_EXPIRES,
+    JWT_COOKIE_SAMESITE,
+    JWT_COOKIE_SECURE,
     MAX_ANALYSES_PER_USER,
     MAX_DATASETS_PER_USER,
     MAX_UPLOAD_BYTES,
+    PASSWORD_RESET_LOG_TOKENS,
+    PASSWORD_RESET_TTL_SECONDS,
     SECRET_KEY,
     use_demo_analysis,
 )
+from observability import health_extras, init_observability
 
 app = Flask(__name__)
 app.config["JWT_SECRET_KEY"] = SECRET_KEY
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = JWT_ACCESS_TOKEN_EXPIRES
+app.config["JWT_TOKEN_LOCATION"] = ["headers", "cookies"]
+app.config["JWT_COOKIE_SECURE"] = JWT_COOKIE_SECURE
+app.config["JWT_COOKIE_SAMESITE"] = JWT_COOKIE_SAMESITE
+app.config["JWT_COOKIE_CSRF_PROTECT"] = True
+app.config["JWT_ACCESS_COOKIE_NAME"] = "prysm_access_token"
+app.config["JWT_ACCESS_CSRF_HEADER_NAME"] = "X-CSRF-TOKEN"
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
 CORS(app, origins=CORS_ORIGINS, supports_credentials=True)
 jwt = JWTManager(app)
+init_observability(app)
 
 models.init_db()
 storage.ensure_dirs()
@@ -75,6 +90,18 @@ def create_admin_command() -> None:
     print(f"Admin '{username}' {'created' if created else 'updated'}.")
 
 
+@app.cli.command("password-reset-link")
+def password_reset_link_command() -> None:
+    email = input("User email: ").strip().lower()
+    token = models.create_password_reset_token(
+        email, ttl_seconds=PASSWORD_RESET_TTL_SECONDS
+    )
+    if not token:
+        print("No user found for that email.")
+        return
+    print(f"{FRONTEND_URL.rstrip('/')}/reset-password?token={token}")
+
+
 def public_user(user: dict) -> dict:
     return {
         "id": user["id"],
@@ -94,6 +121,7 @@ def too_large(_error):
 @app.route("/api/health", methods=["GET"])
 def health():
     db_ok = False
+    storage_ok = False
     try:
         with models.get_connection() as conn:
             conn.execute("SELECT 1").fetchone()
@@ -101,19 +129,22 @@ def health():
     except Exception:
         db_ok = False
 
-    status = "ok" if db_ok else "degraded"
+    try:
+        storage.ensure_dirs()
+        storage_ok = True
+    except Exception:
+        storage_ok = False
+
+    status = "ok" if db_ok and storage_ok else "degraded"
     code = 200 if db_ok else 503
-    return (
-        jsonify(
-            {
-                "status": status,
-                "service": "prysm-api",
-                "demo_mode": use_demo_analysis(),
-                "checks": {"database": db_ok},
-            }
-        ),
-        code,
-    )
+    payload = {
+        "status": status,
+        "service": "prysm-api",
+        "demo_mode": use_demo_analysis(),
+        "checks": {"database": db_ok, "storage": storage_ok},
+    }
+    payload.update(health_extras())
+    return jsonify(payload), code
 
 
 @app.route("/api/auth/change-password", methods=["POST"])
@@ -170,16 +201,15 @@ def register():
 
     user = models.create_user(username, email, password)
     token = create_access_token(identity=str(user["id"]))
-    return (
-        jsonify(
-            {
-                "message": "Account created successfully.",
-                "access_token": token,
-                "user": public_user(user),
-            }
-        ),
-        201,
+    response = jsonify(
+        {
+            "message": "Account created successfully.",
+            "access_token": token,
+            "user": public_user(user),
+        }
     )
+    set_access_cookies(response, token)
+    return response, 201
 
 
 @app.route("/api/auth/login", methods=["POST"])
@@ -207,7 +237,70 @@ def login():
         return jsonify({"message": "Invalid username/email or password."}), 401
 
     token = create_access_token(identity=str(user["id"]))
-    return jsonify({"access_token": token, "user": public_user(user)})
+    response = jsonify({"access_token": token, "user": public_user(user)})
+    set_access_cookies(response, token)
+    return response
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def logout():
+    response = jsonify({"message": "Signed out."})
+    unset_jwt_cookies(response)
+    return response
+
+
+@app.route("/api/auth/password-reset/request", methods=["POST"])
+def password_reset_request():
+    import logging
+
+    from rate_limit import auth_limiter
+
+    client_key = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
+    if not auth_limiter.allow(f"reset:{client_key}"):
+        return jsonify({"message": "Too many reset attempts. Try again shortly."}), 429
+
+    data = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+    # Always return the same message to avoid account enumeration.
+    message = {
+        "message": (
+            "If an account exists for that email, a reset link was created. "
+            "Ask your operator for the link or check server logs when "
+            "PASSWORD_RESET_LOG_TOKENS is enabled."
+        )
+    }
+    if not email:
+        return jsonify(message)
+
+    token = models.create_password_reset_token(
+        email, ttl_seconds=PASSWORD_RESET_TTL_SECONDS
+    )
+    if token and PASSWORD_RESET_LOG_TOKENS:
+        link = f"{FRONTEND_URL.rstrip('/')}/reset-password?token={token}"
+        logging.getLogger("prysm.auth").info("Password reset link for %s: %s", email, link)
+        # Include token only in non-production convenience mode for demos.
+        if not JWT_COOKIE_SECURE:
+            message["dev_reset_link"] = link
+    return jsonify(message)
+
+
+@app.route("/api/auth/password-reset/confirm", methods=["POST"])
+def password_reset_confirm():
+    from rate_limit import auth_limiter
+
+    client_key = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
+    if not auth_limiter.allow(f"reset-confirm:{client_key}"):
+        return jsonify({"message": "Too many reset attempts. Try again shortly."}), 429
+
+    data = request.get_json(silent=True) or {}
+    token = (data.get("token") or "").strip()
+    new_password = data.get("new_password") or ""
+    if not token or not new_password:
+        return jsonify({"message": "token and new_password are required."}), 400
+    error = models.consume_password_reset_token(token, new_password)
+    if error:
+        return jsonify({"message": error}), 400
+    return jsonify({"message": "Password updated. You can sign in now."})
 
 
 @app.route("/api/auth/me", methods=["GET"])
@@ -415,7 +508,9 @@ def _run_analysis_for(user_id: int, dataset: dict, query: str, *, async_mode: bo
         try:
             local_path = storage.get_local_path(dataset["file_key"])
             result = run_analysis(local_path, query)
-            if is_cancelled(analysis["id"]):
+            if is_cancelled(analysis["id"]) or models.is_analysis_cancel_requested(
+                analysis["id"]
+            ):
                 models.update_analysis(
                     analysis["id"],
                     status="cancelled",
@@ -545,6 +640,8 @@ def cancel_analysis(analysis_id: int):
 
     if analysis["status"] not in {"pending", "processing"}:
         return jsonify({"message": "Only in-progress analyses can be cancelled."}), 400
+
+    models.request_analysis_cancel(analysis_id, user_id)
 
     if is_running(analysis_id) and request_cancel(analysis_id):
         return jsonify({"message": "Cancellation requested.", "analysis_id": analysis_id})

@@ -71,6 +71,16 @@ def init_db() -> None:
                 FOREIGN KEY (user_id) REFERENCES users (id),
                 FOREIGN KEY (dataset_id) REFERENCES datasets (id)
             );
+
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                token_hash TEXT NOT NULL UNIQUE,
+                expires_at TEXT NOT NULL,
+                used_at TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            );
             """
         )
         _migrate(conn)
@@ -91,9 +101,25 @@ def _migrate(conn) -> None:
         ("insights_json", "TEXT"),
         ("execution_json", "TEXT"),
         ("summary_json", "TEXT"),
+        ("job_id", "TEXT"),
+        ("cancel_requested_at", "TEXT"),
     ):
         if column not in analysis_columns:
             conn.execute(f"ALTER TABLE analyses ADD COLUMN {column} {ddl}")
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS password_reset_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            token_hash TEXT NOT NULL UNIQUE,
+            expires_at TEXT NOT NULL,
+            used_at TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+        """
+    )
 
 
 @contextmanager
@@ -170,6 +196,89 @@ def change_password(user_id: int, current_password: str, new_password: str) -> s
             (hash_password(new_password), user_id),
         )
     return None
+
+
+def create_password_reset_token(email: str, *, ttl_seconds: int = 3600) -> str | None:
+    """Create a one-time reset token for an email. Returns plaintext token or None."""
+    import hashlib
+    import secrets
+    from datetime import timedelta
+
+    user = get_user_by_email(email.strip().lower())
+    if not user:
+        return None
+
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    now = datetime.now(timezone.utc)
+    expires_at = (now + timedelta(seconds=ttl_seconds)).isoformat()
+
+    with get_connection() as conn:
+        conn.execute(
+            "DELETE FROM password_reset_tokens WHERE user_id = ? AND used_at IS NULL",
+            (user["id"],),
+        )
+        conn.execute(
+            """
+            INSERT INTO password_reset_tokens (user_id, token_hash, expires_at, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (user["id"], token_hash, expires_at, now.isoformat()),
+        )
+    return token
+
+
+def consume_password_reset_token(token: str, new_password: str) -> str | None:
+    """Apply a reset token. Returns error message or None on success."""
+    import hashlib
+
+    if len(new_password) < 8:
+        return "New password must be at least 8 characters."
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    now = datetime.now(timezone.utc).isoformat()
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT * FROM password_reset_tokens
+            WHERE token_hash = ? AND used_at IS NULL
+            """,
+            (token_hash,),
+        ).fetchone()
+        if not row:
+            return "Invalid or expired reset token."
+        if row["expires_at"] < now:
+            return "Invalid or expired reset token."
+        conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (hash_password(new_password), row["user_id"]),
+        )
+        conn.execute(
+            "UPDATE password_reset_tokens SET used_at = ? WHERE id = ?",
+            (now, row["id"]),
+        )
+    return None
+
+
+def request_analysis_cancel(analysis_id: int, user_id: int) -> bool:
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE analyses
+            SET cancel_requested_at = ?
+            WHERE id = ? AND user_id = ? AND status IN ('pending', 'processing')
+            """,
+            (utc_now(), analysis_id, user_id),
+        )
+        return cursor.rowcount > 0
+
+
+def is_analysis_cancel_requested(analysis_id: int) -> bool:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT cancel_requested_at FROM analyses WHERE id = ?",
+            (analysis_id,),
+        ).fetchone()
+    return bool(row and row["cancel_requested_at"])
 
 
 def count_datasets_for_user(user_id: int) -> int:
@@ -318,7 +427,7 @@ def update_analysis(
     summary: dict | None = None,
     error_message: str | None = None,
 ) -> dict[str, Any] | None:
-    completed_at = utc_now() if status in {"completed", "failed"} else None
+    completed_at = utc_now() if status in {"completed", "failed", "cancelled"} else None
     with get_connection() as conn:
         conn.execute(
             """

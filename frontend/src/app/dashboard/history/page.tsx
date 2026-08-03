@@ -21,7 +21,7 @@ export default function HistoryPage() {
   useEffect(() => {
     if (!token) return;
     api
-      .listAnalyses(token)
+      .listAnalyses()
       .then((data) => {
         setAnalyses(data.analyses);
         if (data.analyses[0]) {
@@ -40,7 +40,7 @@ export default function HistoryPage() {
       return;
     }
     try {
-      await api.deleteAnalysis(token, id);
+      await api.deleteAnalysis(id);
       const remaining = analyses.filter((item) => item.id !== id);
       setAnalyses(remaining);
       setSelectedId(remaining[0]?.id ?? null);
