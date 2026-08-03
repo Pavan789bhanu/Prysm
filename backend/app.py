@@ -115,6 +115,15 @@ def register():
 
     if not username or not email or not password:
         return jsonify({"message": "Username, email, and password are required."}), 400
+
+    from validation import validate_email, validate_username
+
+    username_error = validate_username(username)
+    if username_error:
+        return jsonify({"message": username_error}), 400
+    email_error = validate_email(email)
+    if email_error:
+        return jsonify({"message": email_error}), 400
     if len(password) < 8:
         return jsonify({"message": "Password must be at least 8 characters."}), 400
     if models.get_user_by_username(username):
@@ -188,11 +197,11 @@ def _store_upload(user_id: int, filename: str, file_obj) -> tuple[dict | None, t
     if not filename.lower().endswith(".csv"):
         return None, (jsonify({"message": "Only CSV files are supported."}), 400)
 
-    username = models.get_user_by_id(user_id)["username"]
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
     unique = uuid.uuid4().hex[:8]
     stem = filename[:-4] if filename.lower().endswith(".csv") else filename
-    file_key = f"{username}/{stem}_{stamp}_{unique}.csv"
+    # Use numeric user ids in storage keys — never raw usernames (path-safe).
+    file_key = f"user_{user_id}/{stem}_{stamp}_{unique}.csv"
     storage.save_upload(file_obj, file_key)
 
     local_path = storage.get_local_path(file_key)
@@ -259,9 +268,34 @@ def upload_dataset():
 @jwt_required()
 def load_sample_dataset():
     """One-click demo dataset for stakeholder presentations."""
-    from demo_service import sample_file_bytes
+    from demo_service import SAMPLE_FILENAME, sample_file_bytes
+    from rate_limit import upload_limiter
 
     user_id = int(get_jwt_identity())
+    if not upload_limiter.allow(f"sample:{user_id}"):
+        return jsonify({"message": "Sample dataset rate limit exceeded. Try again shortly."}), 429
+
+    suggested = "Show correlations, revenue trends, and visualizations by region"
+
+    # Reuse an existing sample dataset for this user to avoid clutter in demos.
+    existing = next(
+        (
+            item
+            for item in models.list_datasets_for_user(user_id)
+            if item.get("filename") == SAMPLE_FILENAME
+        ),
+        None,
+    )
+    if existing:
+        return jsonify(
+            {
+                "message": "Sample sales dataset ready.",
+                "dataset": existing,
+                "suggested_query": suggested,
+                "reused": True,
+            }
+        )
+
     filename, buffer = sample_file_bytes()
     dataset_record, error = _store_upload(user_id, filename, buffer)
     if error:
@@ -270,9 +304,8 @@ def load_sample_dataset():
         {
             "message": "Sample sales dataset loaded.",
             "dataset": dataset_record,
-            "suggested_query": (
-                "Show correlations, revenue trends, and visualizations by region"
-            ),
+            "suggested_query": suggested,
+            "reused": False,
         }
     )
 
@@ -437,21 +470,11 @@ def analysis_report(analysis_id: int):
 
 @app.route("/api/demo/status", methods=["GET"])
 def demo_status():
-    from config import OPENAI_API_KEY, use_demo_analysis
+    from demo_status import build_demo_status
 
-    return jsonify(
-        {
-            "demo_mode": use_demo_analysis(),
-            "openai_configured": bool(OPENAI_API_KEY),
-            "one_click_demo": True,
-            "charts_enabled": True,
-            "async_analyses": True,
-            "present_mode": True,
-            "report_export": True,
-            "executive_summaries": True,
-            "ready_for_stakeholders": True,
-        }
-    )
+    deep = (request.args.get("deep") or "").lower() in {"1", "true", "yes"}
+    return jsonify(build_demo_status(deep=deep))
+
 
 
 @app.route("/register", methods=["POST"])

@@ -6,18 +6,25 @@ services:
     ports:
       - "8000:8000"
     environment:
-      SECRET_KEY: ${SECRET_KEY:-prysm-demo-secret-change-before-public-launch-0001}
+      # Required for anything beyond local throwaway demos:
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY before starting compose}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       DEMO_MODE: ${DEMO_MODE:-auto}
-      FLASK_ENV: ${FLASK_ENV:-development}
+      FLASK_ENV: ${FLASK_ENV:-production}
       FLASK_DEBUG: "false"
       CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@prysm.local}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-adminpass123}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD (8+ chars) before starting compose}
       PRYSM_DATA_DIR: /var/lib/prysm
     volumes:
       - prysm_data:/var/lib/prysm
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   frontend:
     build:
@@ -28,7 +35,8 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 volumes:
   prysm_data:

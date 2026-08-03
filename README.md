@@ -132,13 +132,17 @@ If `OPENAI_API_KEY` is unset (or `DEMO_MODE=true`), Prysm uses a deterministic o
 ### Docker Compose (recommended for demos)
 
 ```bash
-export SECRET_KEY="a-long-unique-secret"
+export SECRET_KEY="$(openssl rand -hex 32)"
 export ADMIN_PASSWORD="adminpass123"
+export DEMO_MODE=true   # optional
 docker compose up --build
 ```
 
+Compose **requires** `SECRET_KEY` and `ADMIN_PASSWORD` (no insecure hard-coded fallbacks).
+
 - Frontend: http://localhost:3000
 - API: http://localhost:8000
+- Health: backend container has a `/api/health` healthcheck; frontend waits for it
 
 ### Backend (Gunicorn)
 

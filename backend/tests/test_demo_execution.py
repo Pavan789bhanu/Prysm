@@ -27,3 +27,10 @@ def test_demo_analysis_executes_and_returns_charts(tmp_path):
     assert execution["success"] is True
     assert len(execution["charts"]) >= 1
     assert execution["insights"]["rows"] > 0
+
+
+def test_executor_blocks_unsafe_patterns(tmp_path):
+    sample = ensure_sample_csv()
+    result = execute_analysis_code("import subprocess\nsubprocess.run(['echo','x'])\n", str(sample))
+    assert result["success"] is False
+    assert "Blocked" in result["stderr"]

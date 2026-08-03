@@ -4,7 +4,8 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --uid 10001 prysm
 
 COPY backend/requirements.txt /app/backend/requirements.txt
 RUN pip install --no-cache-dir -r /app/backend/requirements.txt
@@ -13,8 +14,12 @@ COPY backend /app/backend
 COPY data_analyst_system.py /app/data_analyst_system.py
 COPY app.py /app/app.py
 
+RUN mkdir -p /var/lib/prysm && chown -R prysm:prysm /app /var/lib/prysm
+
 WORKDIR /app/backend
 ENV PYTHONUNBUFFERED=1
+ENV PRYSM_DATA_DIR=/var/lib/prysm
 EXPOSE 8000
+USER prysm
 
 CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:8000", "--timeout", "120", "app:app"]

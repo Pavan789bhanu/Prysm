@@ -29,6 +29,9 @@ def save_upload(file_obj, file_key: str) -> str:
 
 
 def get_local_path(file_key: str) -> str:
+    if ".." in file_key.replace("\\", "/").split("/"):
+        raise ValueError("Invalid file key.")
+
     if USE_S3:
         local_path = UPLOAD_DIR / file_key.replace("/", "_")
         local_path.parent.mkdir(parents=True, exist_ok=True)
@@ -36,14 +39,24 @@ def get_local_path(file_key: str) -> str:
             s3.download_file(S3_BUCKET, file_key, str(local_path))
         return str(local_path)
 
-    return str(UPLOAD_DIR / file_key)
+    destination = (UPLOAD_DIR / file_key).resolve()
+    root = UPLOAD_DIR.resolve()
+    if root not in destination.parents and destination != root:
+        raise ValueError("Invalid file key.")
+    return str(destination)
 
 
 def delete_file(file_key: str) -> None:
+    if ".." in file_key.replace("\\", "/").split("/"):
+        return
+
     if USE_S3:
         s3.delete_object(Bucket=S3_BUCKET, Key=file_key)
         return
 
-    path = UPLOAD_DIR / file_key
+    path = (UPLOAD_DIR / file_key).resolve()
+    root = UPLOAD_DIR.resolve()
+    if root not in path.parents and path != root:
+        return
     if path.exists():
         path.unlink()

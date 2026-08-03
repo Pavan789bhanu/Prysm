@@ -48,6 +48,10 @@ export default function UploadPage() {
       setError("Only CSV files are supported.");
       return;
     }
+    if (file.size > 10 * 1024 * 1024) {
+      setError("File is larger than 10 MB. Please upload a smaller CSV.");
+      return;
+    }
 
     setUploading(true);
     setError("");
@@ -83,6 +87,9 @@ export default function UploadPage() {
 
   async function handleDelete(id: number) {
     if (!token) return;
+    if (!window.confirm("Delete this dataset and its analyses? This cannot be undone.")) {
+      return;
+    }
     try {
       await api.deleteDataset(token, id);
       await loadDatasets();

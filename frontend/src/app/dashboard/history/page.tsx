@@ -36,6 +36,9 @@ export default function HistoryPage() {
 
   async function handleDelete(id: number) {
     if (!token) return;
+    if (!window.confirm("Delete this analysis permanently?")) {
+      return;
+    }
     try {
       await api.deleteAnalysis(token, id);
       const remaining = analyses.filter((item) => item.id !== id);
