@@ -14,7 +14,9 @@ def _csv(content: bytes = b"a,b\n1,2\n3,4\n"):
 def test_health(client):
     resp = client.get("/api/health")
     assert resp.status_code == 200
-    assert resp.get_json()["status"] == "ok"
+    body = resp.get_json()
+    assert body["status"] == "ok"
+    assert body["checks"]["database"] is True
 
 
 # --------------------------------------------------------------------------- #
@@ -82,6 +84,29 @@ def test_login_success(client, auth):
     )
     assert resp.status_code == 200
     assert resp.get_json()["access_token"]
+
+
+def test_change_password(client, auth):
+    token, headers = auth
+    bad = client.post(
+        "/api/auth/change-password",
+        json={"current_password": "wrong", "new_password": "password456"},
+        headers=headers,
+    )
+    assert bad.status_code == 400
+
+    ok = client.post(
+        "/api/auth/change-password",
+        json={"current_password": "password123", "new_password": "password456"},
+        headers=headers,
+    )
+    assert ok.status_code == 200
+
+    login = client.post(
+        "/api/auth/login",
+        json={"username": "venu", "password": "password456"},
+    )
+    assert login.status_code == 200
 
 
 def test_login_wrong_password(client, auth):

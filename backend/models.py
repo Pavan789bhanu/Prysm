@@ -155,6 +155,41 @@ def verify_user(username: str, password: str) -> dict[str, Any] | None:
     return user
 
 
+def change_password(user_id: int, current_password: str, new_password: str) -> str | None:
+    """Update password. Returns an error message or None on success."""
+    user = get_user_by_id(user_id)
+    if not user:
+        return "User not found."
+    if not check_password_hash(user["password_hash"], current_password):
+        return "Current password is incorrect."
+    if len(new_password) < 8:
+        return "New password must be at least 8 characters."
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (hash_password(new_password), user_id),
+        )
+    return None
+
+
+def count_datasets_for_user(user_id: int) -> int:
+    with get_connection() as conn:
+        return int(
+            conn.execute(
+                "SELECT COUNT(*) FROM datasets WHERE user_id = ?", (user_id,)
+            ).fetchone()[0]
+        )
+
+
+def count_analyses_for_user(user_id: int) -> int:
+    with get_connection() as conn:
+        return int(
+            conn.execute(
+                "SELECT COUNT(*) FROM analyses WHERE user_id = ?", (user_id,)
+            ).fetchone()[0]
+        )
+
+
 def create_or_update_admin(
     username: str, email: str, password: str
 ) -> tuple[dict[str, Any], bool]:
@@ -341,18 +376,23 @@ def get_analysis_by_id(analysis_id: int) -> dict[str, Any] | None:
     return _hydrate_analysis(row)
 
 
-def list_analyses_for_user(user_id: int) -> list[dict[str, Any]]:
-    with get_connection() as conn:
-        rows = conn.execute(
-            """
+def list_analyses_for_user(
+    user_id: int, *, limit: int | None = None, offset: int = 0
+) -> list[dict[str, Any]]:
+    query = """
             SELECT a.*, d.filename, d.file_key, d.row_count, d.column_count
             FROM analyses a
             JOIN datasets d ON d.id = a.dataset_id
             WHERE a.user_id = ?
             ORDER BY a.created_at DESC
-            """,
-            (user_id,),
-        ).fetchall()
+            """
+    params: list[Any] = [user_id]
+    if limit is not None:
+        query += " LIMIT ? OFFSET ?"
+        params.extend([int(limit), int(offset)])
+
+    with get_connection() as conn:
+        rows = conn.execute(query, params).fetchall()
     return [_hydrate_analysis(row) for row in rows]
 
 

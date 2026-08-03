@@ -11,6 +11,7 @@ from typing import Callable
 
 _lock = threading.Lock()
 _running: set[int] = set()
+_cancelled: set[int] = set()
 
 
 def start_analysis_job(analysis_id: int, worker: Callable[[], None]) -> bool:
@@ -19,6 +20,7 @@ def start_analysis_job(analysis_id: int, worker: Callable[[], None]) -> bool:
         if analysis_id in _running:
             return False
         _running.add(analysis_id)
+        _cancelled.discard(analysis_id)
 
     def _run() -> None:
         try:
@@ -26,6 +28,7 @@ def start_analysis_job(analysis_id: int, worker: Callable[[], None]) -> bool:
         finally:
             with _lock:
                 _running.discard(analysis_id)
+                _cancelled.discard(analysis_id)
 
     thread = threading.Thread(
         target=_run,
@@ -39,3 +42,17 @@ def start_analysis_job(analysis_id: int, worker: Callable[[], None]) -> bool:
 def is_running(analysis_id: int) -> bool:
     with _lock:
         return analysis_id in _running
+
+
+def request_cancel(analysis_id: int) -> bool:
+    """Mark a running analysis for cooperative cancellation."""
+    with _lock:
+        if analysis_id not in _running:
+            return False
+        _cancelled.add(analysis_id)
+        return True
+
+
+def is_cancelled(analysis_id: int) -> bool:
+    with _lock:
+        return analysis_id in _cancelled

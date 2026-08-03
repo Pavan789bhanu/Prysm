@@ -24,6 +24,8 @@ from config import (
     CORS_ORIGINS,
     FLASK_DEBUG,
     JWT_ACCESS_TOKEN_EXPIRES,
+    MAX_ANALYSES_PER_USER,
+    MAX_DATASETS_PER_USER,
     MAX_UPLOAD_BYTES,
     SECRET_KEY,
     use_demo_analysis,
@@ -91,13 +93,48 @@ def too_large(_error):
 
 @app.route("/api/health", methods=["GET"])
 def health():
-    return jsonify(
-        {
-            "status": "ok",
-            "service": "prysm-api",
-            "demo_mode": use_demo_analysis(),
-        }
+    db_ok = False
+    try:
+        with models.get_connection() as conn:
+            conn.execute("SELECT 1").fetchone()
+        db_ok = True
+    except Exception:
+        db_ok = False
+
+    status = "ok" if db_ok else "degraded"
+    code = 200 if db_ok else 503
+    return (
+        jsonify(
+            {
+                "status": status,
+                "service": "prysm-api",
+                "demo_mode": use_demo_analysis(),
+                "checks": {"database": db_ok},
+            }
+        ),
+        code,
     )
+
+
+@app.route("/api/auth/change-password", methods=["POST"])
+@jwt_required()
+def change_password():
+    from rate_limit import auth_limiter
+
+    user_id = int(get_jwt_identity())
+    if not auth_limiter.allow(f"password:{user_id}"):
+        return jsonify({"message": "Too many password change attempts. Try again shortly."}), 429
+
+    data = request.get_json(silent=True) or {}
+    current_password = data.get("current_password") or ""
+    new_password = data.get("new_password") or ""
+    if not current_password or not new_password:
+        return jsonify({"message": "current_password and new_password are required."}), 400
+
+    error = models.change_password(user_id, current_password, new_password)
+    if error:
+        return jsonify({"message": error}), 400
+    return jsonify({"message": "Password updated."})
 
 
 @app.route("/api/auth/register", methods=["POST"])
@@ -237,6 +274,13 @@ def set_security_headers(response):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    response.headers["Cross-Origin-Resource-Policy"] = "same-site"
+    # API responses are JSON; keep CSP tight for any HTML error pages.
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+    )
     return response
 
 
@@ -248,6 +292,19 @@ def upload_dataset():
     user_id = int(get_jwt_identity())
     if not upload_limiter.allow(f"upload:{user_id}"):
         return jsonify({"message": "Upload rate limit exceeded. Try again shortly."}), 429
+
+    if models.count_datasets_for_user(user_id) >= MAX_DATASETS_PER_USER:
+        return (
+            jsonify(
+                {
+                    "message": (
+                        f"Dataset limit reached ({MAX_DATASETS_PER_USER}). "
+                        "Delete unused datasets to continue."
+                    )
+                }
+            ),
+            400,
+        )
 
     if "file" not in request.files:
         return jsonify({"message": "No file provided."}), 400
@@ -326,13 +383,30 @@ def remove_dataset(dataset_id: int):
 @jwt_required()
 def list_analyses():
     user_id = int(get_jwt_identity())
-    analyses = models.list_analyses_for_user(user_id)
-    return jsonify({"analyses": analyses})
+    try:
+        limit = request.args.get("limit", type=int)
+        offset = request.args.get("offset", default=0, type=int) or 0
+    except Exception:
+        limit, offset = None, 0
+    if limit is not None:
+        limit = max(1, min(limit, 100))
+    offset = max(0, offset)
+    analyses = models.list_analyses_for_user(user_id, limit=limit, offset=offset)
+    total = models.count_analyses_for_user(user_id)
+    return jsonify({"analyses": analyses, "total": total, "limit": limit, "offset": offset})
 
 
 def _run_analysis_for(user_id: int, dataset: dict, query: str, *, async_mode: bool = False):
     from analyst_service import run_analysis
-    from jobs import start_analysis_job
+    from jobs import is_cancelled, start_analysis_job
+
+    if models.count_analyses_for_user(user_id) >= MAX_ANALYSES_PER_USER:
+        return {
+            "message": (
+                f"Analysis limit reached ({MAX_ANALYSES_PER_USER}). "
+                "Delete older analyses to continue."
+            )
+        }, 400
 
     analysis = models.create_analysis(user_id, dataset["id"], query)
     analysis = models.update_analysis(analysis["id"], status="processing")
@@ -341,6 +415,13 @@ def _run_analysis_for(user_id: int, dataset: dict, query: str, *, async_mode: bo
         try:
             local_path = storage.get_local_path(dataset["file_key"])
             result = run_analysis(local_path, query)
+            if is_cancelled(analysis["id"]):
+                models.update_analysis(
+                    analysis["id"],
+                    status="cancelled",
+                    error_message="Cancelled by user.",
+                )
+                return
             models.update_analysis(
                 analysis["id"],
                 status="completed",
@@ -355,6 +436,13 @@ def _run_analysis_for(user_id: int, dataset: dict, query: str, *, async_mode: bo
                 summary=result.get("summary"),
             )
         except Exception as exc:
+            if is_cancelled(analysis["id"]):
+                models.update_analysis(
+                    analysis["id"],
+                    status="cancelled",
+                    error_message="Cancelled by user.",
+                )
+                return
             models.update_analysis(
                 analysis["id"], status="failed", error_message=str(exc)
             )
@@ -443,6 +531,30 @@ def remove_analysis(analysis_id: int):
     if not models.delete_analysis(analysis_id, user_id):
         return jsonify({"message": "Analysis not found."}), 404
     return jsonify({"message": "Analysis deleted."})
+
+
+@app.route("/api/analyses/<int:analysis_id>/cancel", methods=["POST"])
+@jwt_required()
+def cancel_analysis(analysis_id: int):
+    from jobs import is_running, request_cancel
+
+    user_id = int(get_jwt_identity())
+    analysis = models.get_analysis_by_id(analysis_id)
+    if not analysis or analysis["user_id"] != user_id:
+        return jsonify({"message": "Analysis not found."}), 404
+
+    if analysis["status"] not in {"pending", "processing"}:
+        return jsonify({"message": "Only in-progress analyses can be cancelled."}), 400
+
+    if is_running(analysis_id) and request_cancel(analysis_id):
+        return jsonify({"message": "Cancellation requested.", "analysis_id": analysis_id})
+
+    # Not running in this process (e.g. already finished) — mark cancelled if still open.
+    models.update_analysis(
+        analysis_id, status="cancelled", error_message="Cancelled by user."
+    )
+    fresh = models.get_analysis_by_id(analysis_id)
+    return jsonify({"message": "Analysis cancelled.", "analysis": fresh})
 
 
 @app.route("/api/analyses/<int:analysis_id>/report", methods=["GET"])

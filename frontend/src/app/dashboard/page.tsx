@@ -14,6 +14,7 @@ import { api, type Analysis, type Dataset } from "@/lib/api";
 import { useAuth } from "@/components/providers/auth-provider";
 import { DemoGuide } from "@/components/dashboard/demo-guide";
 import { DemoReadinessBanner } from "@/components/dashboard/demo-readiness-banner";
+import { ChangePasswordCard } from "@/components/dashboard/change-password-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +25,7 @@ export default function DashboardOverviewPage() {
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!token) return;
@@ -31,6 +33,10 @@ export default function DashboardOverviewPage() {
       .then(([datasetData, analysisData]) => {
         setDatasets(datasetData.datasets);
         setAnalyses(analysisData.analyses);
+        setError("");
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Failed to load dashboard data.");
       })
       .finally(() => setLoading(false));
     refreshProfile();
@@ -50,6 +56,12 @@ export default function DashboardOverviewPage() {
       </div>
 
       <DemoReadinessBanner />
+
+      {error ? (
+        <p className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+          {error}
+        </p>
+      ) : null}
 
       <DemoGuide
         hasDatasets={datasets.length > 0}
@@ -223,6 +235,8 @@ export default function DashboardOverviewPage() {
           )}
         </CardContent>
       </Card>
+
+      <ChangePasswordCard />
     </div>
   );
 }

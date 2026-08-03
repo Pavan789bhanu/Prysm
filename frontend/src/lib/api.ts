@@ -68,7 +68,7 @@ export type Analysis = {
   user_id: number;
   dataset_id: number;
   query: string;
-  status: "pending" | "processing" | "completed" | "failed";
+  status: "pending" | "processing" | "completed" | "failed" | "cancelled";
   plan?: string | null;
   plan_desc?: string | null;
   output?: string | null;
@@ -208,6 +208,23 @@ export const api = {
     request<{ message: string }>(
       `/api/analyses/${id}`,
       { method: "DELETE" },
+      token,
+    ),
+
+  cancelAnalysis: (token: string, id: number) =>
+    request<{ message: string; analysis?: Analysis }>(
+      `/api/analyses/${id}/cancel`,
+      { method: "POST" },
+      token,
+    ),
+
+  changePassword: (
+    token: string,
+    payload: { current_password: string; new_password: string },
+  ) =>
+    request<{ message: string }>(
+      "/api/auth/change-password",
+      { method: "POST", body: JSON.stringify(payload) },
       token,
     ),
 

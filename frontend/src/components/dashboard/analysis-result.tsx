@@ -135,7 +135,7 @@ export function AnalysisResult({
               variant={
                 analysis.status === "completed"
                   ? "success"
-                  : analysis.status === "failed"
+                  : analysis.status === "failed" || analysis.status === "cancelled"
                     ? "destructive"
                     : "warning"
               }

@@ -33,4 +33,11 @@ def test_executor_blocks_unsafe_patterns(tmp_path):
     sample = ensure_sample_csv()
     result = execute_analysis_code("import subprocess\nsubprocess.run(['echo','x'])\n", str(sample))
     assert result["success"] is False
-    assert "Blocked" in result["stderr"]
+    assert "Blocked" in result["stderr"] or "not allowed" in result["stderr"].lower()
+
+
+def test_executor_blocks_disallowed_imports(tmp_path):
+    sample = ensure_sample_csv()
+    result = execute_analysis_code("import os\nprint(os.getcwd())\n", str(sample))
+    assert result["success"] is False
+    assert "not allowed" in result["stderr"].lower()
