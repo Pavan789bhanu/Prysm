@@ -233,6 +233,9 @@ export const api = {
       demo_mode: boolean;
       openai_configured: boolean;
       ready_for_stakeholders: boolean;
+      issues?: string[];
+      checks?: Record<string, boolean>;
+      charts_enabled?: boolean;
     }>("/api/demo/status"),
 };
 

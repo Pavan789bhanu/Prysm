@@ -34,9 +34,10 @@ export default function DashboardLayout({
 
   useEffect(() => {
     if (!loading && !user) {
-      router.replace("/login");
+      const next = `${pathname}${window.location.search || ""}`;
+      router.replace(`/login?next=${encodeURIComponent(next)}`);
     }
-  }, [loading, user, router]);
+  }, [loading, user, router, pathname]);
 
   if (loading || !user) {
     return (

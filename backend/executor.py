@@ -21,6 +21,24 @@ from typing import Any
 
 TIMEOUT_SECONDS = int(os.getenv("CODE_EXEC_TIMEOUT", "45"))
 
+_SENSITIVE_ENV_MARKERS = (
+    "SECRET",
+    "PASSWORD",
+    "TOKEN",
+    "API_KEY",
+    "APIKEY",
+    "PRIVATE_KEY",
+    "ACCESS_KEY",
+    "OPENAI",
+    "AWS_",
+)
+
+
+def _is_sensitive_env(key: str) -> bool:
+    upper = key.upper()
+    return any(marker in upper for marker in _SENSITIVE_ENV_MARKERS)
+
+
 _WRAPPER = textwrap.dedent(
     """
     import json
@@ -101,6 +119,30 @@ def execute_analysis_code(code: str, dataset_path: str) -> dict[str, Any]:
             "insights": None,
         }
 
+    # Soft guardrails: reject obviously dangerous patterns before spawning.
+    blocked = (
+        "subprocess",
+        "socket",
+        "__import__('os')",
+        "os.system",
+        "shutil.rmtree",
+        "pathlib.Path('/')",
+        "open('/",
+        "eval(",
+        "exec(",
+        "pickle",
+    )
+    lowered = code.lower()
+    for token in blocked:
+        if token.lower() in lowered:
+            return {
+                "success": False,
+                "stdout": "",
+                "stderr": f"Blocked potentially unsafe code pattern: {token}",
+                "charts": [],
+                "insights": None,
+            }
+
     work = Path(tempfile.mkdtemp(prefix="prysm-exec-"))
     out_dir = work / "out"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -110,10 +152,25 @@ def execute_analysis_code(code: str, dataset_path: str) -> dict[str, Any]:
     script = _WRAPPER.replace("    __USER_CODE__\n", indented)
     script_path.write_text(script, encoding="utf-8")
 
-    env = os.environ.copy()
+    # Inherit runtime paths so site-packages resolve, but strip secrets/tokens.
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if not _is_sensitive_env(key)
+    }
     env["PRYSM_DATASET_PATH"] = str(Path(dataset_path).resolve())
     env["PRYSM_OUTPUT_DIR"] = str(out_dir.resolve())
     env["MPLBACKEND"] = "Agg"
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    # Ensure generated code cannot see common secret variables even if renamed oddly.
+    for banned in (
+        "OPENAI_API_KEY",
+        "SECRET_KEY",
+        "ADMIN_PASSWORD",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_ACCESS_KEY_ID",
+    ):
+        env.pop(banned, None)
 
     try:
         completed = subprocess.run(

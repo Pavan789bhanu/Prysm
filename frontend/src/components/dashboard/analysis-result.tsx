@@ -228,6 +228,27 @@ export function AnalysisResult({
             ))}
           </CardContent>
         </Card>
+      ) : analysis.status === "completed" ? (
+        <Card className="border-amber-400/25 bg-amber-500/5">
+          <CardHeader>
+            <CardTitle>Charts unavailable for this run</CardTitle>
+            <CardDescription>
+              The pipeline finished, but no figures were captured. Use Present for findings,
+              export the report, or re-run the one-click demo.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {execution?.stderr ? (
+              <p className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
+                {execution.stderr.slice(0, 400)}
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Executive summary and generated code are still available below.
+              </p>
+            )}
+          </CardContent>
+        </Card>
       ) : null}
 
       {insights ? (

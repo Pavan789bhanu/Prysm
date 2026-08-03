@@ -4,12 +4,17 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, ShieldAlert, Sparkles } from "lucide-react";
 import { api } from "@/lib/api";
 
+type DemoStatus = {
+  demo_mode: boolean;
+  openai_configured: boolean;
+  ready_for_stakeholders: boolean;
+  issues?: string[];
+  checks?: Record<string, boolean>;
+};
+
 export function DemoReadinessBanner() {
-  const [status, setStatus] = useState<{
-    demo_mode: boolean;
-    openai_configured: boolean;
-    ready_for_stakeholders: boolean;
-  } | null>(null);
+  const [status, setStatus] = useState<DemoStatus | null>(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -19,12 +24,21 @@ export function DemoReadinessBanner() {
         if (active) setStatus(data);
       })
       .catch(() => {
-        if (active) setStatus(null);
+        if (active) setFailed(true);
       });
     return () => {
       active = false;
     };
   }, []);
+
+  if (failed) {
+    return (
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+        <ShieldAlert className="h-4 w-4 shrink-0" />
+        <p className="font-medium">Could not reach demo status — is the API running on port 8000?</p>
+      </div>
+    );
+  }
 
   if (!status) return null;
 
@@ -52,12 +66,14 @@ export function DemoReadinessBanner() {
             : status.openai_configured
               ? "Live OpenAI pipeline configured."
               : "No OpenAI key detected."}{" "}
-          One-click demo, present mode, and report export are available.
+          {ready
+            ? "One-click demo, present mode, and report export checked out."
+            : (status.issues || []).slice(0, 2).join(" · ") || "Run scripts/demo_preflight.sh"}
         </p>
       </div>
       <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs">
         <Sparkles className="h-3.5 w-3.5" />
-        Fundraiser path
+        {ready ? "Fundraiser ready" : "Fix before demo"}
       </span>
     </div>
   );

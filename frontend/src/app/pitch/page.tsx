@@ -46,16 +46,16 @@ export default function PitchPage() {
           </span>
           Prysm
         </Link>
-        <div className="flex gap-2">
-          <Link href="/login">
-            <Button variant="ghost" size="sm">
-              Sign in
-            </Button>
-          </Link>
-          <Link href="/register">
-            <Button size="sm">Start demo</Button>
-          </Link>
-        </div>
+          <div className="flex gap-2">
+            <Link href={`/login?next=${encodeURIComponent("/dashboard/analyze")}`}>
+              <Button variant="ghost" size="sm">
+                Sign in
+              </Button>
+            </Link>
+            <Link href={`/register?next=${encodeURIComponent("/dashboard/analyze")}`}>
+              <Button size="sm">Start demo</Button>
+            </Link>
+          </div>
       </header>
 
       <main className="mx-auto max-w-6xl px-4 pb-24 pt-16 sm:px-6">
@@ -76,13 +76,13 @@ export default function PitchPage() {
             notebook dump.
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Link href="/register">
+            <Link href={`/register?next=${encodeURIComponent("/dashboard/analyze")}`}>
               <Button size="lg" className="min-w-[200px]">
                 Launch product demo
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </Link>
-            <Link href="/dashboard/analyze">
+            <Link href={`/login?next=${encodeURIComponent("/dashboard/analyze")}`}>
               <Button size="lg" variant="outline" className="min-w-[200px]">
                 <Play className="h-4 w-4" />
                 Go to one-click demo
@@ -170,7 +170,10 @@ export default function PitchPage() {
                 That is the Prysm bet — multi-agent planning, trusted execution, and a
                 product surface designed for buyers, not just builders.
               </p>
-              <Link href="/register" className="mt-6 inline-flex">
+              <Link
+                href={`/register?next=${encodeURIComponent("/dashboard/analyze")}`}
+                className="mt-6 inline-flex"
+              >
                 <Button>
                   Begin the live demo
                   <ArrowRight className="h-4 w-4" />

@@ -40,9 +40,19 @@ def test_register_missing_fields(client):
 def test_register_short_password(client):
     resp = client.post(
         "/api/auth/register",
-        json={"username": "x", "email": "x@e.com", "password": "short"},
+        json={"username": "shortpwd", "email": "x@e.com", "password": "short"},
     )
     assert resp.status_code == 400
+    assert "Password" in resp.get_json()["message"]
+
+
+def test_register_invalid_username(client):
+    resp = client.post(
+        "/api/auth/register",
+        json={"username": "bad name!", "email": "ok@example.com", "password": "password123"},
+    )
+    assert resp.status_code == 400
+    assert "Username" in resp.get_json()["message"]
 
 
 def test_register_duplicate_username(client, auth):
@@ -130,6 +140,7 @@ def test_upload_csv_success(client, auth):
     assert ds["row_count"] == 2
     assert ds["column_count"] == 2
     assert ds["columns"] == ["a", "b"]
+    assert ds["file_key"].startswith("user_")
 
 
 def test_upload_same_filename_keeps_unique_keys(client, auth):
@@ -224,9 +235,17 @@ def test_sample_dataset_and_delete(client, auth):
     _, headers = auth
     sample = client.post("/api/datasets/sample", headers=headers)
     assert sample.status_code == 200
-    dataset = sample.get_json()["dataset"]
+    body = sample.get_json()
+    dataset = body["dataset"]
     assert dataset["filename"].endswith(".csv")
     assert dataset["row_count"] > 0
+    assert body.get("reused") is False
+
+    again = client.post("/api/datasets/sample", headers=headers)
+    assert again.status_code == 200
+    again_body = again.get_json()
+    assert again_body.get("reused") is True
+    assert again_body["dataset"]["id"] == dataset["id"]
 
     deleted = client.delete(f"/api/datasets/{dataset['id']}", headers=headers)
     assert deleted.status_code == 200
@@ -396,8 +415,12 @@ def test_demo_status_endpoint(client):
     resp = client.get("/api/demo/status")
     assert resp.status_code == 200
     body = resp.get_json()
-    assert body["ready_for_stakeholders"] is True
+    assert "ready_for_stakeholders" in body
+    assert "checks" in body
+    assert "sample_csv" in body["checks"]
     assert body["one_click_demo"] is True
+    # Do not assume ready=True forever — honesty matters for demos.
+    assert isinstance(body["ready_for_stakeholders"], bool)
 
 
 def test_sample_demo_flow_returns_charts_and_summary(client, auth):
