@@ -140,6 +140,16 @@ docker compose up --build
 
 Compose **requires** `SECRET_KEY` and `ADMIN_PASSWORD` (no insecure hard-coded fallbacks).
 
+Optional Redis/RQ (durable async jobs + shared rate limits):
+
+```bash
+export SECRET_KEY="$(openssl rand -hex 32)"
+export ADMIN_PASSWORD="adminpass123"
+export REDIS_URL=redis://redis:6379/0
+export JOB_BACKEND=rq
+docker compose --profile redis up --build
+```
+
 - Frontend: http://localhost:3000
 - API: http://localhost:8000
 - Health: backend container has a `/api/health` healthcheck; frontend waits for it
