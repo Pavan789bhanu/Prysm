@@ -94,8 +94,7 @@ export default function DashboardLayout({
             variant="ghost"
             className="w-full justify-start text-slate-300 hover:bg-white/8 hover:text-white"
             onClick={() => {
-              logout();
-              router.push("/login");
+              void logout().then(() => router.push("/login"));
             }}
           >
             <LogOut className="h-4 w-4" />

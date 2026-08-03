@@ -39,3 +39,7 @@ def reset_all_limiters() -> None:
     auth_limiter.reset()
     analysis_limiter.reset()
     upload_limiter.reset()
+
+
+def backend_name() -> str:
+    return "memory"

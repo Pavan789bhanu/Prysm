@@ -98,17 +98,22 @@ class ApiError extends Error {
   }
 }
 
-async function request<T>(
-  path: string,
-  options: RequestInit = {},
-  token?: string | null,
-): Promise<T> {
+function readCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
-  if (!(options.body instanceof FormData)) {
+  if (!(options.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
+
+  const method = (options.method || "GET").toUpperCase();
+  if (method !== "GET" && method !== "HEAD") {
+    const csrf = readCookie("csrf_access_token");
+    if (csrf) headers.set("X-CSRF-TOKEN", csrf);
   }
 
   let response: Response;
@@ -116,12 +121,17 @@ async function request<T>(
     response = await fetch(`${API_URL}${path}`, {
       ...options,
       headers,
+      credentials: "include",
     });
   } catch {
     throw new ApiError(
       `Can't reach the server at ${API_URL}. Make sure the backend is running and NEXT_PUBLIC_API_URL is correct.`,
       0,
     );
+  }
+
+  if (response.status === 204) {
+    return {} as T;
   }
 
   const data = await response.json().catch(() => ({}));
@@ -151,86 +161,80 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
-  me: (token: string) =>
-    request<{ user: User; stats: UserStats; demo_mode?: boolean }>(
-      "/api/auth/me",
-      {},
-      token,
+  logout: () => request<{ message: string }>("/api/auth/logout", { method: "POST" }),
+
+  me: () =>
+    request<{ user: User; stats: UserStats; demo_mode?: boolean }>("/api/auth/me"),
+
+  requestPasswordReset: (email: string) =>
+    request<{ message: string; dev_reset_link?: string }>(
+      "/api/auth/password-reset/request",
+      { method: "POST", body: JSON.stringify({ email }) },
     ),
 
-  listDatasets: (token: string) =>
-    request<{ datasets: Dataset[] }>("/api/datasets", {}, token),
+  confirmPasswordReset: (payload: { token: string; new_password: string }) =>
+    request<{ message: string }>("/api/auth/password-reset/confirm", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
 
-  uploadDataset: (token: string, file: File) => {
+  listDatasets: () => request<{ datasets: Dataset[] }>("/api/datasets"),
+
+  uploadDataset: (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
-    return request<{ dataset: Dataset; message: string }>(
-      "/api/datasets/upload",
-      { method: "POST", body: formData },
-      token,
-    );
+    return request<{ dataset: Dataset; message: string }>("/api/datasets/upload", {
+      method: "POST",
+      body: formData,
+    });
   },
 
-  loadSampleDataset: (token: string) =>
+  loadSampleDataset: () =>
     request<{
       dataset: Dataset;
       message: string;
       suggested_query: string;
-    }>("/api/datasets/sample", { method: "POST" }, token),
+    }>("/api/datasets/sample", { method: "POST" }),
 
-  deleteDataset: (token: string, id: number) =>
-    request<{ message: string }>(
-      `/api/datasets/${id}`,
-      { method: "DELETE" },
-      token,
-    ),
+  deleteDataset: (id: number) =>
+    request<{ message: string }>(`/api/datasets/${id}`, { method: "DELETE" }),
 
-  listAnalyses: (token: string) =>
-    request<{ analyses: Analysis[] }>("/api/analyses", {}, token),
+  listAnalyses: () => request<{ analyses: Analysis[]; total?: number }>("/api/analyses"),
 
-  createAnalysis: (
-    token: string,
-    payload: { query: string; dataset_id: number; async?: boolean },
-  ) =>
-    request<{ analysis: Analysis; message: string; async?: boolean }>(
-      "/api/analyses",
-      {
-        method: "POST",
-        body: JSON.stringify({ async: true, ...payload }),
-      },
-      token,
-    ),
+  createAnalysis: (payload: {
+    query: string;
+    dataset_id: number;
+    async?: boolean;
+  }) =>
+    request<{ analysis: Analysis; message: string; async?: boolean }>("/api/analyses", {
+      method: "POST",
+      body: JSON.stringify({ async: true, ...payload }),
+    }),
 
-  getAnalysis: (token: string, id: number) =>
-    request<{ analysis: Analysis }>(`/api/analyses/${id}`, {}, token),
+  getAnalysis: (id: number) =>
+    request<{ analysis: Analysis }>(`/api/analyses/${id}`),
 
-  deleteAnalysis: (token: string, id: number) =>
-    request<{ message: string }>(
-      `/api/analyses/${id}`,
-      { method: "DELETE" },
-      token,
-    ),
+  deleteAnalysis: (id: number) =>
+    request<{ message: string }>(`/api/analyses/${id}`, { method: "DELETE" }),
 
-  cancelAnalysis: (token: string, id: number) =>
-    request<{ message: string; analysis?: Analysis }>(
-      `/api/analyses/${id}/cancel`,
-      { method: "POST" },
-      token,
-    ),
+  cancelAnalysis: (id: number) =>
+    request<{ message: string; analysis?: Analysis }>(`/api/analyses/${id}/cancel`, {
+      method: "POST",
+    }),
 
-  changePassword: (
-    token: string,
-    payload: { current_password: string; new_password: string },
-  ) =>
-    request<{ message: string }>(
-      "/api/auth/change-password",
-      { method: "POST", body: JSON.stringify(payload) },
-      token,
-    ),
+  changePassword: (payload: { current_password: string; new_password: string }) =>
+    request<{ message: string }>("/api/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
 
-  downloadReport: async (token: string, id: number) => {
+  downloadReport: async (id: number) => {
+    const headers = new Headers();
+    const csrf = readCookie("csrf_access_token");
+    if (csrf) headers.set("X-CSRF-TOKEN", csrf);
     const response = await fetch(`${API_URL}/api/analyses/${id}/report`, {
-      headers: { Authorization: `Bearer ${token}` },
+      credentials: "include",
+      headers,
     });
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));

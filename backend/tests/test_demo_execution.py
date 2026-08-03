@@ -41,3 +41,11 @@ def test_executor_blocks_disallowed_imports(tmp_path):
     result = execute_analysis_code("import os\nprint(os.getcwd())\n", str(sample))
     assert result["success"] is False
     assert "not allowed" in result["stderr"].lower()
+
+
+def test_executor_blocks_open_and_dunder(tmp_path):
+    sample = ensure_sample_csv()
+    opened = execute_analysis_code("open('/etc/passwd').read()\n", str(sample))
+    assert opened["success"] is False
+    dunder = execute_analysis_code("print(df.__class__)\n", str(sample))
+    assert dunder["success"] is False

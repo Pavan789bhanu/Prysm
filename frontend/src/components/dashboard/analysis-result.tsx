@@ -91,7 +91,7 @@ export function AnalysisResult({
     setReportBusy(true);
     setReportError("");
     try {
-      await api.downloadReport(token, analysis.id);
+      await api.downloadReport(analysis.id);
       setToast("Stakeholder report downloaded");
     } catch (err) {
       setReportError(err instanceof ApiError ? err.message : "Report download failed.");
@@ -222,7 +222,8 @@ export function AnalysisResult({
                   title={chart.title}
                   srcDoc={chart.html}
                   className="h-[420px] w-full border-0"
-                  sandbox="allow-scripts allow-same-origin"
+                  sandbox="allow-scripts"
+                  referrerPolicy="no-referrer"
                 />
               </div>
             ))}
@@ -446,7 +447,8 @@ export function AnalysisResult({
                     title={chart.title}
                     srcDoc={chart.html}
                     className="h-[460px] w-full border-0"
-                    sandbox="allow-scripts allow-same-origin"
+                    sandbox="allow-scripts"
+                  referrerPolicy="no-referrer"
                   />
                 </div>
               ))}

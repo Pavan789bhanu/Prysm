@@ -56,3 +56,7 @@ def request_cancel(analysis_id: int) -> bool:
 def is_cancelled(analysis_id: int) -> bool:
     with _lock:
         return analysis_id in _cancelled
+
+
+def backend_name() -> str:
+    return "thread"

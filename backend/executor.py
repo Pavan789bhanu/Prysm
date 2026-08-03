@@ -73,10 +73,6 @@ def _validate_generated_code(code: str) -> str | None:
         "__import__",
         "os.system",
         "shutil.rmtree",
-        "pathlib.Path('/')",
-        "open('/",
-        "eval(",
-        "exec(",
         "pickle",
     )
     lowered = code.lower()
@@ -90,6 +86,22 @@ def _validate_generated_code(code: str) -> str | None:
         tree = ast.parse(code)
     except SyntaxError as exc:
         return f"Generated code has a syntax error: {exc}"
+
+    blocked_names = {
+        "eval",
+        "exec",
+        "compile",
+        "__import__",
+        "open",
+        "input",
+        "getattr",
+        "setattr",
+        "delattr",
+        "globals",
+        "locals",
+        "vars",
+        "breakpoint",
+    }
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -105,9 +117,28 @@ def _validate_generated_code(code: str) -> str | None:
         elif isinstance(node, ast.Call):
             func = node.func
             name = getattr(func, "id", None) or getattr(func, "attr", None)
-            if name in {"eval", "exec", "compile", "__import__"}:
+            if name in blocked_names:
                 return f"Blocked dangerous call: {name}()"
+        elif isinstance(node, ast.Attribute):
+            if isinstance(node.attr, str) and node.attr.startswith("__"):
+                return f"Blocked dunder attribute access: {node.attr}"
+        elif isinstance(node, ast.Name):
+            if node.id in {"__builtins__", "__loader__", "__spec__"}:
+                return f"Blocked name access: {node.id}"
     return None
+
+
+def _limit_resources() -> None:
+    """Best-effort Unix resource limits for the child process."""
+    try:
+        import resource
+
+        # CPU seconds
+        resource.setrlimit(resource.RLIMIT_CPU, (TIMEOUT_SECONDS + 5, TIMEOUT_SECONDS + 5))
+        # Max file size 64MB for accidental huge dumps
+        resource.setrlimit(resource.RLIMIT_FSIZE, (64 * 1024 * 1024, 64 * 1024 * 1024))
+    except Exception:
+        return
 
 
 _WRAPPER = textwrap.dedent(
@@ -220,6 +251,9 @@ def execute_analysis_code(code: str, dataset_path: str) -> dict[str, Any]:
     env["PRYSM_OUTPUT_DIR"] = str(out_dir.resolve())
     env["MPLBACKEND"] = "Agg"
     env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env["OPENBLAS_NUM_THREADS"] = "1"
+    env["OMP_NUM_THREADS"] = "1"
+    env["MKL_NUM_THREADS"] = "1"
     # Ensure generated code cannot see common secret variables even if renamed oddly.
     for banned in (
         "OPENAI_API_KEY",
@@ -230,15 +264,21 @@ def execute_analysis_code(code: str, dataset_path: str) -> dict[str, Any]:
     ):
         env.pop(banned, None)
 
+    run_kwargs: dict[str, Any] = {
+        "cwd": str(work),
+        "env": env,
+        "capture_output": True,
+        "text": True,
+        "timeout": TIMEOUT_SECONDS,
+        "check": False,
+    }
+    if hasattr(os, "setuid"):  # Unix-ish
+        run_kwargs["preexec_fn"] = _limit_resources
+
     try:
         completed = subprocess.run(
             [sys.executable, str(script_path)],
-            cwd=str(work),
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=TIMEOUT_SECONDS,
-            check=False,
+            **run_kwargs,
         )
         stdout = completed.stdout[-8000:]
         stderr = completed.stderr[-8000:]

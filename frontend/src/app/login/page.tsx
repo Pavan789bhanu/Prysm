@@ -78,20 +78,25 @@ function LoginForm() {
               {error}
             </p>
           ) : null}
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Sign in
-          </Button>
-        </form>
-        <p className="mt-6 text-center text-sm text-muted-foreground">
-          Don&apos;t have an account?{" "}
-          <Link
-            href={`/register?next=${encodeURIComponent(nextPath)}`}
-            className="font-medium text-fuchsia-300 hover:text-fuchsia-200 hover:underline"
-          >
-            Create one
-          </Link>
-        </p>
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Sign in
+            </Button>
+          </form>
+          <p className="mt-4 text-center text-sm text-muted-foreground">
+            <Link href="/forgot-password" className="text-fuchsia-300 hover:underline">
+              Forgot password?
+            </Link>
+          </p>
+          <p className="mt-4 text-center text-sm text-muted-foreground">
+            Don&apos;t have an account?{" "}
+            <Link
+              href={`/register?next=${encodeURIComponent(nextPath)}`}
+              className="font-medium text-fuchsia-300 hover:text-fuchsia-200 hover:underline"
+            >
+              Create one
+            </Link>
+          </p>
       </CardContent>
     </Card>
   );

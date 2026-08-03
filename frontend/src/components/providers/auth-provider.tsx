@@ -11,6 +11,7 @@ import {
 import { api, type User, type UserStats } from "@/lib/api";
 
 type AuthContextValue = {
+  /** Present when authenticated (cookie session). Kept for call-site guards. */
   token: string | null;
   user: User | null;
   stats: UserStats | null;
@@ -21,40 +22,32 @@ type AuthContextValue = {
     email: string,
     password: string,
   ) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
-
-const TOKEN_KEY = "prysm_token";
-
-function readStoredToken() {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(TOKEN_KEY);
-}
+const LEGACY_TOKEN_KEY = "prysm_token";
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => readStoredToken());
   const [user, setUser] = useState<User | null>(null);
   const [stats, setStats] = useState<UserStats | null>(null);
-  const [loading, setLoading] = useState(() => Boolean(readStoredToken()));
+  const [loading, setLoading] = useState(true);
 
   const refreshProfile = useCallback(async () => {
-    if (!token) return;
-    const data = await api.me(token);
+    const data = await api.me();
     setUser(data.user);
     setStats(data.stats);
-  }, [token]);
+  }, []);
 
   useEffect(() => {
-    if (!token) {
-      return;
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(LEGACY_TOKEN_KEY);
     }
 
     let active = true;
     api
-      .me(token)
+      .me()
       .then((data) => {
         if (!active) return;
         setUser(data.user);
@@ -62,8 +55,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })
       .catch(() => {
         if (!active) return;
-        window.localStorage.removeItem(TOKEN_KEY);
-        setToken(null);
         setUser(null);
         setStats(null);
       })
@@ -74,30 +65,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       active = false;
     };
-  }, [token]);
+  }, []);
 
   const login = useCallback(async (username: string, password: string) => {
     const data = await api.login({ username, password });
-    window.localStorage.setItem(TOKEN_KEY, data.access_token);
-    setToken(data.access_token);
     setUser(data.user);
     setLoading(false);
+    try {
+      const profile = await api.me();
+      setStats(profile.stats);
+    } catch {
+      setStats(null);
+    }
   }, []);
 
   const register = useCallback(
     async (username: string, email: string, password: string) => {
       const data = await api.register({ username, email, password });
-      window.localStorage.setItem(TOKEN_KEY, data.access_token);
-      setToken(data.access_token);
       setUser(data.user);
       setLoading(false);
+      try {
+        const profile = await api.me();
+        setStats(profile.stats);
+      } catch {
+        setStats(null);
+      }
     },
     [],
   );
 
-  const logout = useCallback(() => {
-    window.localStorage.removeItem(TOKEN_KEY);
-    setToken(null);
+  const logout = useCallback(async () => {
+    try {
+      await api.logout();
+    } catch {
+      // Ignore network errors on logout — clear local session anyway.
+    }
     setUser(null);
     setStats(null);
     setLoading(false);
@@ -105,7 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo(
     () => ({
-      token,
+      token: user ? "session" : null,
       user,
       stats,
       loading,
@@ -114,7 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       logout,
       refreshProfile,
     }),
-    [token, user, stats, loading, login, register, logout, refreshProfile],
+    [user, stats, loading, login, register, logout, refreshProfile],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
