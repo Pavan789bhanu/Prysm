@@ -17,6 +17,8 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@prysm.local}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD (8+ chars) before starting compose}
       PRYSM_DATA_DIR: /var/lib/prysm
+      REDIS_URL: ${REDIS_URL:-}
+      JOB_BACKEND: ${JOB_BACKEND:-auto}
     volumes:
       - prysm_data:/var/lib/prysm
     healthcheck:
@@ -37,6 +39,34 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    profiles: ["redis"]
+    ports:
+      - "6379:6379"
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    profiles: ["redis"]
+    command: ["python", "worker.py"]
+    environment:
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY before starting compose}
+      DEMO_MODE: ${DEMO_MODE:-auto}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      REDIS_URL: redis://redis:6379/0
+      JOB_BACKEND: rq
+      PRYSM_DATA_DIR: /var/lib/prysm
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@prysm.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD (8+ chars) before starting compose}
+    volumes:
+      - prysm_data:/var/lib/prysm
+    depends_on:
+      - redis
+      - backend
 
 volumes:
   prysm_data:

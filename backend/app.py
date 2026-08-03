@@ -490,8 +490,8 @@ def list_analyses():
 
 
 def _run_analysis_for(user_id: int, dataset: dict, query: str, *, async_mode: bool = False):
-    from analyst_service import run_analysis
-    from jobs import is_cancelled, start_analysis_job
+    from analysis_runner import run_analysis_task
+    from jobs import start_analysis_job
 
     if models.count_analyses_for_user(user_id) >= MAX_ANALYSES_PER_USER:
         return {
@@ -504,46 +504,8 @@ def _run_analysis_for(user_id: int, dataset: dict, query: str, *, async_mode: bo
     analysis = models.create_analysis(user_id, dataset["id"], query)
     analysis = models.update_analysis(analysis["id"], status="processing")
 
-    def worker() -> None:
-        try:
-            local_path = storage.get_local_path(dataset["file_key"])
-            result = run_analysis(local_path, query)
-            if is_cancelled(analysis["id"]) or models.is_analysis_cancel_requested(
-                analysis["id"]
-            ):
-                models.update_analysis(
-                    analysis["id"],
-                    status="cancelled",
-                    error_message="Cancelled by user.",
-                )
-                return
-            models.update_analysis(
-                analysis["id"],
-                status="completed",
-                plan=result.get("plan"),
-                plan_desc=result.get("plan_desc"),
-                output=result.get("output"),
-                agent_outputs=result.get("agent_outputs"),
-                dataset_preview=result.get("dataset_preview"),
-                charts=result.get("charts"),
-                insights=result.get("insights"),
-                execution=result.get("execution"),
-                summary=result.get("summary"),
-            )
-        except Exception as exc:
-            if is_cancelled(analysis["id"]):
-                models.update_analysis(
-                    analysis["id"],
-                    status="cancelled",
-                    error_message="Cancelled by user.",
-                )
-                return
-            models.update_analysis(
-                analysis["id"], status="failed", error_message=str(exc)
-            )
-
     if async_mode:
-        start_analysis_job(analysis["id"], worker)
+        start_analysis_job(analysis["id"])
         fresh = models.get_analysis_by_id(analysis["id"])
         return {
             "message": "Analysis started.",
@@ -553,21 +515,13 @@ def _run_analysis_for(user_id: int, dataset: dict, query: str, *, async_mode: bo
 
     # Synchronous path (legacy + tests).
     try:
-        local_path = storage.get_local_path(dataset["file_key"])
-        result = run_analysis(local_path, query)
-        analysis = models.update_analysis(
-            analysis["id"],
-            status="completed",
-            plan=result.get("plan"),
-            plan_desc=result.get("plan_desc"),
-            output=result.get("output"),
-            agent_outputs=result.get("agent_outputs"),
-            dataset_preview=result.get("dataset_preview"),
-            charts=result.get("charts"),
-            insights=result.get("insights"),
-            execution=result.get("execution"),
-            summary=result.get("summary"),
-        )
+        run_analysis_task(analysis["id"])
+        analysis = models.get_analysis_by_id(analysis["id"])
+        if analysis and analysis["status"] == "failed":
+            return {
+                "message": f"Analysis failed: {analysis.get('error_message')}",
+                "analysis": analysis,
+            }, 500
     except Exception as exc:
         analysis = models.update_analysis(
             analysis["id"], status="failed", error_message=str(exc)

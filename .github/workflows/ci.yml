@@ -29,7 +29,7 @@ jobs:
           cache-dependency-path: backend/requirements.txt
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt pip-audit
 
       - name: Run pytest
         run: pytest -q
@@ -41,6 +41,26 @@ jobs:
         env:
           SECRET_KEY: ci-test-secret-key-that-is-definitely-32-bytes
           DEMO_MODE: "true"
+
+      - name: API e2e smoke
+        run: |
+          export SECRET_KEY=ci-test-secret-key-that-is-definitely-32-bytes
+          export DEMO_MODE=true
+          export FLASK_DEBUG=false
+          python app.py &
+          APP_PID=$!
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/api/health >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          python ../scripts/api_e2e.py
+          kill $APP_PID
+
+      - name: Python dependency audit
+        run: pip-audit -r requirements.txt || true
+        # Informational for now — fail-closed once pins stabilize.
 
   frontend:
     name: Frontend lint and build
@@ -69,3 +89,6 @@ jobs:
         run: npm run build
         env:
           NEXT_PUBLIC_API_URL: http://localhost:8000
+
+      - name: npm audit (high+)
+        run: npm audit --audit-level=high || true
