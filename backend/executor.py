@@ -33,10 +33,81 @@ _SENSITIVE_ENV_MARKERS = (
     "AWS_",
 )
 
+_ALLOWED_IMPORT_ROOTS = {
+    "pandas",
+    "numpy",
+    "plotly",
+    "scipy",
+    "statsmodels",
+    "sklearn",
+    "matplotlib",
+    "seaborn",
+    "math",
+    "statistics",
+    "collections",
+    "datetime",
+    "json",
+    "re",
+    "warnings",
+    "typing",
+    "itertools",
+    "functools",
+    "decimal",
+    "random",
+    "copy",
+    "string",
+    "textwrap",
+}
+
 
 def _is_sensitive_env(key: str) -> bool:
     upper = key.upper()
     return any(marker in upper for marker in _SENSITIVE_ENV_MARKERS)
+
+
+def _validate_generated_code(code: str) -> str | None:
+    """Return an error message if code looks unsafe; otherwise None."""
+    blocked = (
+        "subprocess",
+        "socket",
+        "__import__",
+        "os.system",
+        "shutil.rmtree",
+        "pathlib.Path('/')",
+        "open('/",
+        "eval(",
+        "exec(",
+        "pickle",
+    )
+    lowered = code.lower()
+    for token in blocked:
+        if token.lower() in lowered:
+            return f"Blocked potentially unsafe code pattern: {token}"
+
+    try:
+        import ast
+
+        tree = ast.parse(code)
+    except SyntaxError as exc:
+        return f"Generated code has a syntax error: {exc}"
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".", 1)[0]
+                if root not in _ALLOWED_IMPORT_ROOTS:
+                    return f"Import not allowed: {alias.name}"
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                root = node.module.split(".", 1)[0]
+                if root not in _ALLOWED_IMPORT_ROOTS:
+                    return f"Import not allowed: {node.module}"
+        elif isinstance(node, ast.Call):
+            func = node.func
+            name = getattr(func, "id", None) or getattr(func, "attr", None)
+            if name in {"eval", "exec", "compile", "__import__"}:
+                return f"Blocked dangerous call: {name}()"
+    return None
 
 
 _WRAPPER = textwrap.dedent(
@@ -120,28 +191,15 @@ def execute_analysis_code(code: str, dataset_path: str) -> dict[str, Any]:
         }
 
     # Soft guardrails: reject obviously dangerous patterns before spawning.
-    blocked = (
-        "subprocess",
-        "socket",
-        "__import__('os')",
-        "os.system",
-        "shutil.rmtree",
-        "pathlib.Path('/')",
-        "open('/",
-        "eval(",
-        "exec(",
-        "pickle",
-    )
-    lowered = code.lower()
-    for token in blocked:
-        if token.lower() in lowered:
-            return {
-                "success": False,
-                "stdout": "",
-                "stderr": f"Blocked potentially unsafe code pattern: {token}",
-                "charts": [],
-                "insights": None,
-            }
+    validation_error = _validate_generated_code(code)
+    if validation_error:
+        return {
+            "success": False,
+            "stdout": "",
+            "stderr": validation_error,
+            "charts": [],
+            "insights": None,
+        }
 
     work = Path(tempfile.mkdtemp(prefix="prysm-exec-"))
     out_dir = work / "out"

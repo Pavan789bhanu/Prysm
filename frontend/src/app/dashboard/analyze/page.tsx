@@ -28,6 +28,7 @@ export default function AnalyzePage() {
   const [error, setError] = useState("");
   const [result, setResult] = useState<Analysis | null>(null);
   const [demoMode, setDemoMode] = useState(false);
+  const [activeAnalysisId, setActiveAnalysisId] = useState<number | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -78,6 +79,7 @@ export default function AnalyzePage() {
         async: true,
       });
       setResult(response.analysis);
+      setActiveAnalysisId(response.analysis.id);
       if (response.analysis.status === "processing") {
         await pollAnalysis(response.analysis.id);
       } else {
@@ -92,6 +94,17 @@ export default function AnalyzePage() {
       }
     } finally {
       setLoading(false);
+      setActiveAnalysisId(null);
+    }
+  }
+
+  async function handleCancel() {
+    if (!token || !activeAnalysisId) return;
+    try {
+      await api.cancelAnalysis(token, activeAnalysisId);
+      setError("Cancellation requested. Waiting for the worker to stop…");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not cancel analysis.");
     }
   }
 
@@ -111,6 +124,7 @@ export default function AnalyzePage() {
         async: true,
       });
       setResult(response.analysis);
+      setActiveAnalysisId(response.analysis.id);
       if (response.analysis.status === "processing") {
         await pollAnalysis(response.analysis.id);
       } else {
@@ -125,6 +139,7 @@ export default function AnalyzePage() {
       }
     } finally {
       setLoading(false);
+      setActiveAnalysisId(null);
     }
   }
 
@@ -266,7 +281,16 @@ export default function AnalyzePage() {
 
         <div className="space-y-6">
           {loading ? (
-            <AnalysisProgress key="running" />
+            <div className="space-y-4">
+              <AnalysisProgress key="running" />
+              {activeAnalysisId ? (
+                <div className="flex justify-center">
+                  <Button variant="outline" onClick={() => void handleCancel()}>
+                    Cancel analysis
+                  </Button>
+                </div>
+              ) : null}
+            </div>
           ) : result ? (
             <AnalysisResult analysis={result} autoPresentHint />
           ) : (

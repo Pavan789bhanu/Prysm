@@ -30,6 +30,8 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 JWT_ACCESS_TOKEN_EXPIRES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRES", "86400"))
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
 CODE_EXEC_TIMEOUT = int(os.getenv("CODE_EXEC_TIMEOUT", "45"))
+MAX_DATASETS_PER_USER = int(os.getenv("MAX_DATASETS_PER_USER", "50"))
+MAX_ANALYSES_PER_USER = int(os.getenv("MAX_ANALYSES_PER_USER", "100"))
 # When true (or when OPENAI_API_KEY is missing), use deterministic demo analysis.
 DEMO_MODE = os.getenv("DEMO_MODE", "auto").lower()
 

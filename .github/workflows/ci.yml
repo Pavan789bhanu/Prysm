@@ -36,6 +36,12 @@ jobs:
         env:
           SECRET_KEY: ci-test-secret-key-that-is-definitely-32-bytes
 
+      - name: Funding demo smoke
+        run: bash ../scripts/demo_smoke.sh
+        env:
+          SECRET_KEY: ci-test-secret-key-that-is-definitely-32-bytes
+          DEMO_MODE: "true"
+
   frontend:
     name: Frontend lint and build
     runs-on: ubuntu-latest
